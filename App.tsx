@@ -646,13 +646,48 @@ export default function App() {
     setIsAutoFilling(false);
   };
 
+  /**
+   * Enhanced Brief Construction with Fallback Handler:
+   * 1. Check if all required fields are manually filled.
+   * 2. If present, proceed directly (bypass intent extraction).
+   * 3. If incomplete AND quickPaste is available, run intent extraction as a fallback.
+   * 4. Build the strategic brief from the final input state.
+   */
   const handleBuildBrief = async () => {
     setIsBuilding(true);
     try {
-      const brief = await buildFullStrategicBrief(inputs, globalSettings);
+      let finalInputs = { ...inputs };
+      
+      // Determine if the manual fields are already complete
+      const isManuallyComplete = !!(
+        inputs.businessName.trim() &&
+        inputs.industry.trim() &&
+        inputs.targetAudience.trim() &&
+        inputs.productDescription.trim() &&
+        inputs.primaryUSP.trim() &&
+        inputs.painPoints.trim()
+      );
+
+      // Trigger Intent Extraction only as a fallback if manual input is incomplete but source text exists
+      if (!isManuallyComplete && quickPaste.trim()) {
+        const extracted = await autoFillContext(quickPaste, globalSettings);
+        finalInputs = { ...inputs, ...extracted };
+        setInputs(finalInputs); // Update UI to reflect the extraction results
+      }
+      
+      // Strict validation before proceeding to the expensive generation step
+      if (!finalInputs.businessName.trim()) {
+        throw new Error("Business Name is required to build a brief. Please enter it manually or provide source text.");
+      }
+
+      const brief = await buildFullStrategicBrief(finalInputs, globalSettings);
       setFullBriefText(brief);
       setBlueprint(parseFullBrief(brief));
-    } catch (e) { alert("Brief construction failed."); } finally { setIsBuilding(false); }
+    } catch (e: any) { 
+      alert(e.message || "Brief construction failed."); 
+    } finally { 
+      setIsBuilding(false); 
+    }
   };
 
   const handleInject = () => {
@@ -724,7 +759,7 @@ export default function App() {
             <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">Copy <span className="text-indigo-400">Architect AI</span></h1>
           </div>
           <nav className="flex items-center gap-2">
-            <NavTab label="Briefs" icon={ClipboardList} active={activeTab === 'Brief'} onClick={() => setActiveTab('Brief')} tooltip="Strategy Architect" />
+            <NavTab label="Briefs" icon={ClipboardList} active={activeTab === 'Brief'} onClick={() => setActiveTab('Brief'} tooltip="Strategy Architect" />
             <NavTab label="Emails" icon={Mail} active={activeTab === 'Email'} onClick={() => setActiveTab('Email')} tooltip="Email Matrix" />
             <NavTab label="Landing Page" icon={Layout} active={activeTab === 'Landing Page'} onClick={() => setActiveTab('Landing Page')} tooltip="Sales Builder" />
             <NavTab label="VSL" icon={Video} active={activeTab === 'VSL'} onClick={() => setActiveTab('VSL')} tooltip="Video Scripts" />
@@ -794,7 +829,7 @@ export default function App() {
                         loadingPhrases={["Synthesizing data...", "Applying psychology...", "Finalizing strategy..."]}
                         label="Build Full Brief"
                         icon={ChevronRight}
-                        disabled={!inputs.businessName}
+                        disabled={!inputs.businessName && !quickPaste.trim()}
                         className="flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase"
                       />
                   </div>
