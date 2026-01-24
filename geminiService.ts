@@ -63,8 +63,59 @@ export async function buildFullStrategicBrief(inputs: BriefInputs, global: Globa
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
   const response = await ai.models.generateContent({
     model: global.model,
-    contents: `Generate a strategy brief based on these inputs: ${JSON.stringify(inputs)}. Focus on the Big Idea and psychological levers.`,
-    config: { systemInstruction: "You are an Elite Copywriting Strategist." }
+    contents: `Generate a comprehensive strategic brief based on these inputs: ${JSON.stringify(inputs)}.
+    
+    You MUST follow this EXACT format and include all headers and sub-bullets:
+    
+    Brief Template
+    Client’s Name: [Name]
+    
+    Target Audience Demographics:
+    - Age range, gender, income level: [Details]
+    - Professional background: [Details]
+    - Family status: [Details]
+    - Geographic location: [Details]
+    - Values and beliefs: [Details]
+    
+    Top 3 Pain Points/Fears:
+    - Current struggles: [Details]
+    - What keeps them up at night: [Details]
+    - Worst-case scenarios they want to avoid: [Details]
+    
+    Top 3 Dreams/Desires:
+    - Ideal outcomes: [Details]
+    - Aspirational goals: [Details]
+    - Emotional rewards they seek: [Details]
+    
+    One Big Promise:
+    [The primary transformation your offer provides. Must be specific and believable]
+    
+    Existing Solutions' Flaws:
+    - Why current options fall short: [Details]
+    - Common frustrations with alternatives: [Details]
+    - Market gaps your offer fills: [Details]
+    
+    Product Details:
+    - Features and specifications: [Details]
+    - Delivery method: [Details]
+    - Implementation process: [Details]
+    - Support and resources included: [Details]
+    
+    Key Benefits:
+    - Tangible results: [Details]
+    - Emotional benefits: [Details]
+    - Lifestyle improvements: [Details]
+    - Time/money saved: [Details]
+    
+    Common Objections:
+    - Price concerns: [Details]
+    - Trust issues: [Details]
+    - Implementation fears: [Details]
+    - Time commitment worries: [Details]
+    
+    For Landing Page Writing (ONLY): What is the big idea offer for the landing page?
+    [The Big Idea]`,
+    config: { systemInstruction: "You are an Elite Copywriting Strategist and Behavioral Psychologist." }
   });
   return response.text || "";
 }
@@ -215,18 +266,23 @@ export async function generateMarketingCopy(
       CTA: ${opt.ctaText}.
       ${inspirationNote}
 
-      CRITICAL FINAL SECTIONS:
+      CRITICAL FINAL SECTIONS (REQUIRED):
       
       1. "--- LANDING PAGE ARCHITECTURE SUMMARY ---"
-      Provide a bulleted technical summary of every structural block you included in the copy above. 
-      For each block, explain: 
-      - The specific conversion objective of that section.
-      - The psychological trigger used (e.g., Scarcity, Social Proof, Authority, Liking).
-      - Why this specific content angle was chosen for this target audience.
-      Format this as a technical architectural breakdown/prompt.
+      Provide a comprehensive summary including:
+      - **Framework Applied**: ${opt.structureType}
+      - **Primary Objective**: ${opt.pageGoal}
+      - **Architectural Flow (In Order)**:
+        List every section generated above in the exact order they appear.
+      - **Technical Breakdown**:
+        For each block, explain: 
+        - The specific conversion objective of that section.
+        - The psychological trigger used (e.g., Scarcity, Social Proof, Authority, Liking).
+        - Why this specific content angle was chosen for this target audience.
+      Format this as a detailed technical architectural breakdown.
 
       2. "--- A/B TESTING STRATEGY ---"
-      Suggest 3 specific variables to split-test for this landing page.
+      Suggest 3 specific variables to split-test for this landing page to optimize conversion performance.
     `;
   } else if (assetType === 'VSL') {
     const opt = options as VSLOptions;
