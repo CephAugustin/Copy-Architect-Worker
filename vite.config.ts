@@ -5,12 +5,12 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   define: {
-    // Specifically target process.env.API_KEY for replacement.
+    // Specifically target process.env.GEMINI_API_KEY for replacement.
     // This ensures it is available in the browser context as required by the coding guidelines.
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY),
     // Also provide a fallback for process.env to prevent "process is not defined" errors.
     'process.env': {
-      API_KEY: process.env.API_KEY
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY
     }
   },
   server: {

@@ -59,8 +59,10 @@ FRAMEWORK: Elite High-Ticket (Conversion-Engineered)
 9. FINAL CTA: Lock in action with visual instructions.
 `;
 
+const API_KEY = process.env.GEMINI_API_KEY || "";
+
 export async function buildFullStrategicBrief(inputs: BriefInputs, global: GlobalSettings): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   const response = await ai.models.generateContent({
     model: global.model,
     contents: `Generate a comprehensive strategic brief based on these inputs: ${JSON.stringify(inputs)}.
@@ -125,7 +127,7 @@ export async function analyzeReferenceAsset(
   data: string,
   global: GlobalSettings
 ): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   
   let parts: any[] = [];
   if (type === 'image') {
@@ -160,7 +162,7 @@ export async function analyzeReferenceAsset(
 }
 
 export async function recommendLPSettings(brief: string, global: GlobalSettings): Promise<{ structureType: string; reason: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   const response = await ai.models.generateContent({
     model: global.model,
     contents: `Based on this brief, recommend the best Landing Page Framework: ${brief}`,
@@ -184,7 +186,7 @@ export async function recommendLPSettings(brief: string, global: GlobalSettings)
 }
 
 export async function recommendAdSettings(brief: string, global: GlobalSettings): Promise<{ framework: string; hookType: string; platform: string; reason: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   const response = await ai.models.generateContent({
     model: global.model,
     contents: `Recommend the best Ad Framework, Hook, and Platform for this brief: ${brief}`,
@@ -210,7 +212,7 @@ export async function recommendAdSettings(brief: string, global: GlobalSettings)
 }
 
 export async function recommendVSLSettings(brief: string, global: GlobalSettings): Promise<{ framework: string; hookType: string; reason: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   const response = await ai.models.generateContent({
     model: global.model,
     contents: `Recommend a VSL Framework and Hook for this brief: ${brief}`,
@@ -242,9 +244,10 @@ export async function generateMarketingCopy(
   isRefinement: boolean = false,
   refinementFeedback: string = "",
   refinementType: 'Fix' | 'Remake' = 'Remake',
-  previousContent: string = ""
+  previousContent: string = "",
+  systemPromptOverride?: string
 ): Promise<{ text: string; sources?: any[] }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   
   let assetSpecificPrompt = "";
   if (assetType === 'Email') {
@@ -338,7 +341,7 @@ export async function generateMarketingCopy(
     model: global.model,
     contents: `${isRefinement ? "REFINEMENT: " + refinementFeedback : "GENERATE NEW COPY."} BRIEF: ${brief} ${assetSpecificPrompt}`,
     config: {
-      systemInstruction: "You are an Elite Direct Response Copywriter. Your goal is high conversion through emotional resonance and simple logic.",
+      systemInstruction: systemPromptOverride || "You are an Elite Direct Response Copywriter. Your goal is high conversion through emotional resonance and simple logic.",
       tools: global.useGoogleSearch ? [{ googleSearch: {} }] : undefined,
     },
   });
@@ -347,7 +350,7 @@ export async function generateMarketingCopy(
 }
 
 export async function autoFillContext(rawText: string, global: GlobalSettings): Promise<Partial<BriefInputs>> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
   const response = await ai.models.generateContent({
     model: global.model,
     contents: `Extract businessName, industry, targetAudience, productDescription, primaryUSP, painPoints from: "${rawText}"`,

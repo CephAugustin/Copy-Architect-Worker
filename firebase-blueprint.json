@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "KnowledgeEntry": {
+      "title": "Knowledge Entry",
+      "description": "Stored copywriting knowledge",
+      "type": "object",
+      "properties": {
+        "knowledgeId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "label": { "type": "string", "enum": ["email", "ads", "vsl", "landing_page", "general", "tactics"] },
+        "content": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "priority": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["knowledgeId", "userId", "title", "label", "content", "createdAt", "updatedAt"]
+    },
+    "Folder": {
+      "title": "Folder",
+      "description": "A folder for organizing files",
+      "type": "object",
+      "properties": {
+        "folderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["folderId", "userId", "name", "createdAt"]
+    },
+    "FileEntry": {
+      "title": "File Entry",
+      "description": "A file record",
+      "type": "object",
+      "properties": {
+        "fileId": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "folderId": { "type": "string" },
+        "size": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["fileId", "userId", "name", "size", "createdAt"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "A personal note",
+      "type": "object",
+      "properties": {
+        "noteId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["noteId", "userId", "title", "createdAt"]
+    },
+    "TeamMember": {
+      "title": "Team Member",
+      "description": "A member of the user's team",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["memberId", "userId", "name", "createdAt"]
+    },
+    "SavedPrompt": {
+      "title": "Saved Prompt",
+      "description": "A saved marketing prompt or system instruction",
+      "type": "object",
+      "properties": {
+        "promptId": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string", "enum": ["email", "ads", "vsl", "landing_page", "general", "system_prompt", "other"] },
+        "content": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["promptId", "userId", "title", "category", "content", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profile data"
+    },
+    "users/{userId}/knowledge/{knowledgeId}": {
+      "schema": "KnowledgeEntry",
+      "description": "User specific copywriting knowledge"
+    },
+    "users/{userId}/folders/{folderId}": {
+      "schema": "Folder",
+      "description": "User specific folders"
+    },
+    "users/{userId}/files/{fileId}": {
+      "schema": "FileEntry",
+      "description": "User specific files"
+    },
+    "users/{userId}/notes/{noteId}": {
+      "schema": "Note",
+      "description": "User specific notes"
+    },
+    "users/{userId}/teamMembers/{memberId}": {
+      "schema": "TeamMember",
+      "description": "User specific team members"
+    },
+    "users/{userId}/savedPrompts/{promptId}": {
+      "schema": "SavedPrompt",
+      "description": "User specific saved prompts"
+    }
+  }
+}

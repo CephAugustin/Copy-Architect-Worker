@@ -1,15 +1,29 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AssetType, EmailOptions, LPOptions, VSLOptions, AdOptions, GlobalSettings, GeneratedAsset, BriefInputs } from './types';
+import { AssetType, EmailOptions, LPOptions, VSLOptions, AdOptions, GlobalSettings, GeneratedAsset, BriefInputs, SavedPrompt } from './types';
 import { generateMarketingCopy, autoFillContext, buildFullStrategicBrief, recommendVSLSettings, recommendAdSettings, recommendLPSettings, analyzeReferenceAsset } from './geminiService';
 import { 
   Mail, Layout, Video, Megaphone, Settings, Zap, Copy, Check, Trash2, 
   RotateCcw, RefreshCcw, Loader2, Sparkles, ClipboardList, Info, X, 
   Target, Brain, Star, ShieldCheck, ZapIcon, HelpCircle, 
   User, Database, Eraser, ChevronRight, PenTool, Wand2, Link, Link2Off, Layers, Scissors, Hammer, Monitor, Boxes, MousePointerClick, Filter, 
-  Sparkle, Shield, Compass, BookOpen, Flag, Clock, MessageSquare, Flame, BookText, Wand, ListChecks, ArrowDownWideNarrow, AppWindow, FlaskConical, Beaker, Gauge, Upload, Globe, Image as ImageIcon
+  Sparkle, Shield, Compass, BookOpen, Flag, Clock, MessageSquare, Flame, BookText, Wand, ListChecks, ArrowDownWideNarrow, AppWindow, FlaskConical, Beaker, Gauge, Upload, Globe, Image as ImageIcon,
+  LogOut, FolderOpen, Save, Download, LayoutDashboard, StickyNote, Users, Terminal
 } from 'lucide-react';
+import Auth from './Auth';
+import Workspace from './Workspace';
+import KnowledgeBase from './KnowledgeBase';
+import FileManager from './FileManager';
+import NotesManager from './NotesManager';
+import TeamManager from './TeamManager';
+import PromptsManager from './PromptsManager';
+import { auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 // --- Constants ---
+
+type ViewState = 'workspace' | 'editor' | 'knowledge' | 'files' | 'notes' | 'team' | 'prompts';
+
+// Existing constants...
 
 const LP_FRAMEWORKS = [
   { 
@@ -494,6 +508,38 @@ export default function App() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [assets, setAssets] = useState<GeneratedAsset[]>([]);
 
+  // Auth and Navigation State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentView, setCurrentView] = useState<ViewState>('workspace');
+  const [activeSystemPrompt, setActiveSystemPrompt] = useState<SavedPrompt | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.emailVerified) {
+        setIsAuthenticated(true);
+        setCurrentView('workspace');
+      } else {
+        setIsAuthenticated(false);
+        setCurrentView('workspace');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleSelectProject = (projectId: string) => {
+    setCurrentView('editor');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentView('workspace');
+    } catch (error) {
+      console.error('Logout failed', error);
+    }
+  };
+
   const [showRefinementModal, setShowRefinementModal] = useState<string | null>(null);
   const [refinementFeedback, setRefinementFeedback] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -699,7 +745,17 @@ export default function App() {
       const assetToRefine = assetIdToRefine ? assets.find(a => a.id === assetIdToRefine) : null;
       const type = assetToRefine ? assetToRefine.type : activeTab as AssetType;
       const options = type === 'Email' ? emailOpts : type === 'Landing Page' ? lpOpts : type === 'VSL' ? vslOpts : adOpts;
-      const result = await generateMarketingCopy(activeContext, type, options, globalSettings, !!assetIdToRefine, refinementFeedback, refinementType, assetToRefine?.content || "");
+      const result = await generateMarketingCopy(
+        activeContext, 
+        type, 
+        options, 
+        globalSettings, 
+        !!assetIdToRefine, 
+        refinementFeedback, 
+        refinementType, 
+        assetToRefine?.content || "",
+        activeSystemPrompt?.content
+      );
       if (assetIdToRefine) {
         setAssets(prev => prev.map(a => a.id === assetIdToRefine ? { ...a, content: result.text, timestamp: Date.now() } : a));
         setShowRefinementModal(null);
@@ -708,6 +764,16 @@ export default function App() {
         setAssets(prev => [{ id: Math.random().toString(36).substr(2, 9), type, content: result.text, timestamp: Date.now() }, ...prev]);
       }
     } catch (err) { alert("Generation failed."); } finally { setIsGeneratingAsset(false); }
+  };
+
+  const handleDownloadTxt = (content: string, type: string) => {
+    const element = document.createElement("a");
+    const file = new Blob([content], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `${type}_Deliverable_${Date.now()}.txt`;
+    document.body.appendChild(element); // Required for this to work in FireFox
+    element.click();
+    document.body.removeChild(element);
   };
 
   const copyToClipboard = async (text: string, id: string) => {
@@ -736,6 +802,128 @@ export default function App() {
     }));
   };
 
+  const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any; label: string; active: boolean; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-300 relative group ${
+        active 
+          ? 'bg-indigo-600 text-white shadow-[0_10px_30px_rgba(99,102,241,0.2)]' 
+          : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/40'
+      }`}
+    >
+      <Icon size={20} className={active ? 'text-white' : 'group-hover:text-indigo-400'} />
+      <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
+      {active && <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full"></div>}
+    </button>
+  );
+
+  if (!isAuthenticated) {
+    return <Auth onLogin={() => setIsAuthenticated(true)} />;
+  }
+
+  if (currentView !== 'editor') {
+    return (
+      <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-indigo-500/30 font-sans flex">
+        <div className="fixed inset-0 pointer-events-none opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+        
+        {/* Sidebar */}
+        <aside className="w-80 h-screen sticky top-0 border-r border-slate-800/60 bg-[#020617]/40 backdrop-blur-3xl p-8 flex flex-col justify-between z-50">
+           <div className="space-y-12">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform -rotate-6">
+                  <ZapIcon size={22} className="text-white" fill="currentColor" />
+                </div>
+                <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">Copy <span className="text-indigo-400">Architect</span></h1>
+              </div>
+
+              <div className="space-y-2">
+                 <div className="text-[10px] font-black uppercase text-slate-600 tracking-[0.3em] pb-2 ml-2">Main Menu</div>
+                 <SidebarItem 
+                   icon={LayoutDashboard} 
+                   label="Home" 
+                   active={currentView === 'workspace'} 
+                   onClick={() => setCurrentView('workspace')} 
+                 />
+                 <SidebarItem 
+                   icon={Zap} 
+                   label="Execution Lab" 
+                   active={false} 
+                   onClick={() => setCurrentView('editor')} 
+                 />
+                 <SidebarItem 
+                   icon={BookOpen} 
+                   label="Knowledge Base" 
+                   active={currentView === 'knowledge'} 
+                   onClick={() => setCurrentView('knowledge')} 
+                 />
+                 <SidebarItem 
+                   icon={Terminal} 
+                   label="Saved Prompts" 
+                   active={currentView === 'prompts'} 
+                   onClick={() => setCurrentView('prompts')} 
+                 />
+                 <SidebarItem 
+                   icon={FolderOpen} 
+                   label="My Files" 
+                   active={currentView === 'files'} 
+                   onClick={() => setCurrentView('files')} 
+                 />
+                 <SidebarItem 
+                   icon={StickyNote} 
+                   label="My Notes" 
+                   active={currentView === 'notes'} 
+                   onClick={() => setCurrentView('notes')} 
+                 />
+                 <SidebarItem 
+                   icon={Users} 
+                   label="Team Members" 
+                   active={currentView === 'team'} 
+                   onClick={() => setCurrentView('team')} 
+                 />
+              </div>
+           </div>
+
+           <div className="space-y-4">
+              <div className="p-6 bg-slate-900/40 border border-slate-800/40 rounded-3xl space-y-4">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold italic">
+                       {auth.currentUser?.email?.[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                       <p className="text-xs font-black text-white truncate uppercase italic">{auth.currentUser?.email?.split('@')[0]}</p>
+                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800/40 px-2 py-0.5 rounded-md w-fit mt-1">Creator Plan</p>
+                    </div>
+                 </div>
+                 <button onClick={handleLogout} className="w-full py-3 bg-slate-800/40 hover:bg-red-500/10 hover:text-red-500 border border-slate-700/40 rounded-xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-all">
+                    <LogOut size={16} /> Logout
+                 </button>
+              </div>
+              <p className="text-[9px] text-slate-600 font-bold text-center uppercase tracking-[0.3em]">Copy Architect AI © 2026</p>
+           </div>
+        </aside>
+
+        {/* Content Area */}
+        <div className="flex-1 min-w-0 h-screen overflow-y-auto no-scrollbar">
+           <main className="min-h-full">
+              {currentView === 'workspace' && <Workspace onEnterLab={() => setCurrentView('editor')} />}
+              {currentView === 'knowledge' && <div className="max-w-[1200px] mx-auto px-8 py-12"><KnowledgeBase /></div>}
+              {currentView === 'files' && <div className="max-w-[1200px] mx-auto px-8 py-12"><FileManager /></div>}
+              {currentView === 'notes' && <div className="max-w-[1200px] mx-auto px-8 py-12"><NotesManager /></div>}
+              {currentView === 'team' && <div className="max-w-[1200px] mx-auto px-8 py-12"><TeamManager /></div>}
+              {currentView === 'prompts' && (
+                <div className="max-w-[1200px] mx-auto px-8 py-12">
+                  <PromptsManager 
+                    activeProtocol={activeSystemPrompt} 
+                    onSelectProtocol={setActiveSystemPrompt} 
+                  />
+                </div>
+              )}
+           </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-indigo-500/30 font-sans">
       <div className="fixed inset-0 pointer-events-none opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
@@ -745,16 +933,28 @@ export default function App() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/40 transform -rotate-6">
               <ZapIcon size={22} className="text-white" fill="currentColor" />
             </div>
-            <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">Copy <span className="text-indigo-400">Architect AI</span></h1>
+            <h1 className="text-xl font-black tracking-tighter text-white uppercase italic hidden md:block">Copy <span className="text-indigo-400">Architect AI</span></h1>
           </div>
-          <nav className="flex items-center gap-2">
+          <nav className="flex items-center gap-2 overflow-x-auto mx-4 no-scrollbar">
             <NavTab label="Briefs" icon={ClipboardList} active={activeTab === 'Brief'} onClick={() => setActiveTab('Brief')} tooltip="Strategy Architect" />
             <NavTab label="Emails" icon={Mail} active={activeTab === 'Email'} onClick={() => setActiveTab('Email')} tooltip="Email Matrix" />
             <NavTab label="Landing Page" icon={Layout} active={activeTab === 'Landing Page'} onClick={() => setActiveTab('Landing Page')} tooltip="Sales Builder" />
             <NavTab label="VSL" icon={Video} active={activeTab === 'VSL'} onClick={() => setActiveTab('VSL')} tooltip="Video Scripts" />
             <NavTab label="Ads" icon={Megaphone} active={activeTab === 'Ads'} onClick={() => setActiveTab('Ads')} tooltip="Ad Variations" />
           </nav>
-          <button onClick={() => setIsSettingsOpen(true)} className="p-3 rounded-2xl border border-slate-800 hover:bg-slate-800 text-slate-400 transition-all"><Settings size={20} /></button>
+          <div className="flex items-center gap-4">
+            {activeSystemPrompt && (
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                <Terminal size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest truncate max-w-[120px]">{activeSystemPrompt.title} Active</span>
+                <button onClick={() => setActiveSystemPrompt(null)} className="hover:text-white ml-1"><X size={14} /></button>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <button onClick={() => setCurrentView('workspace')} className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition-all text-xs font-bold uppercase"><LayoutDashboard size={16} /> <span className="hidden md:inline">Home</span></button>
+              <button onClick={() => setIsSettingsOpen(true)} className="p-3 rounded-2xl border border-slate-800 hover:bg-slate-800 text-slate-400 transition-all"><Settings size={20} /></button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -774,7 +974,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg"><Target size={24} className="text-white" /></div>
-                      <h3 className="text-xl font-black text-white italic tracking-tight uppercase">Project Setup</h3>
+                      <h3 className="text-xl font-black text-white italic tracking-tight uppercase">Strategy Setup</h3>
                     </div>
                     <button onClick={() => { handleReset(); setFullBriefText(''); setBlueprint(emptyBlueprint); }} className="px-4 py-2 bg-slate-800/40 border border-slate-700/60 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all"><RotateCcw size={14} className="inline mr-2" /> Clear</button>
                   </div>
@@ -1253,7 +1453,11 @@ export default function App() {
                         <div key={asset.id} className="bg-[#0f172a]/40 border border-slate-800/60 rounded-[3.5rem] overflow-hidden group shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                            <div className="px-12 py-8 border-b border-slate-800/60 bg-slate-900/50 flex items-center justify-between">
                               <div className="flex items-center gap-6"><div className="p-3 bg-indigo-600/10 rounded-2xl text-indigo-400">{asset.type === 'Email' ? <Mail size={22} /> : asset.type === 'Landing Page' ? <Layout size={22} /> : asset.type === 'VSL' ? <Video size={22} /> : <Megaphone size={22} />}</div><div className="text-xs font-black text-white italic uppercase tracking-tighter">{activeTab} Output</div></div>
-                              <div className="flex items-center gap-3"><button onClick={() => { setShowRefinementModal(asset.id); setRefinementFeedback(''); }} className="flex items-center gap-2 px-5 py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl hover:bg-indigo-500 transition-all text-[10px] font-black uppercase"><RefreshCcw size={16} /> Refine / Fix</button><button onClick={() => copyToClipboard(asset.content, asset.id)} className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-white">{copiedId === asset.id ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}</button></div>
+                              <div className="flex items-center gap-3">
+                                <button onClick={() => handleDownloadTxt(asset.content, asset.type)} className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-white" title="Download .txt"><Download size={18} /></button>
+                                <button onClick={() => { setShowRefinementModal(asset.id); setRefinementFeedback(''); }} className="flex items-center gap-2 px-5 py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl hover:bg-indigo-500 hover:text-white transition-all text-[10px] font-black uppercase"><RefreshCcw size={16} /> Refine / Fix</button>
+                                <button onClick={() => copyToClipboard(asset.content, asset.id)} className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-white" title="Copy to clipboard">{copiedId === asset.id ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}</button>
+                              </div>
                            </div>
                            <div className="p-16 space-y-12">
                               <div className="whitespace-pre-wrap leading-relaxed text-slate-300 font-serif italic text-xl prose prose-invert max-w-none">{mainContent}</div>
@@ -1306,7 +1510,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Global Settings & Refinement Modals */}
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
            <div className="bg-[#0f172a] w-full max-w-xl rounded-[4rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">

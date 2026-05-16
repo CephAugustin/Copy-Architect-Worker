@@ -74,3 +74,64 @@ export interface GeneratedAsset {
   sources?: Array<{ web: { uri: string; title: string } }>;
   originalPromptData?: any;
 }
+
+export interface UserProfile {
+  uid: string;
+  email: string | null;
+  name: string | null;
+  createdAt: number;
+}
+
+export interface KnowledgeEntry {
+  knowledgeId: string;
+  userId: string;
+  title: string;
+  label: 'email' | 'ads' | 'vsl' | 'landing_page' | 'general' | 'tactics';
+  content: string;
+  tags?: string[];
+  priority?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Folder {
+  folderId: string;
+  userId: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface FileEntry {
+  fileId: string;
+  userId: string;
+  name: string;
+  folderId?: string;
+  size: number;
+  createdAt: number;
+}
+
+export interface Note {
+  noteId: string;
+  userId: string;
+  title: string;
+  content?: string;
+  createdAt: number;
+}
+
+export interface TeamMember {
+  memberId: string;
+  userId: string;
+  name: string;
+  role?: string;
+  createdAt: number;
+}
+
+export interface SavedPrompt {
+  promptId: string;
+  userId: string;
+  title: string;
+  category: 'email' | 'ads' | 'vsl' | 'landing_page' | 'general' | 'system_prompt' | 'other';
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
