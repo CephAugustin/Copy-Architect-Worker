@@ -245,7 +245,8 @@ export async function generateMarketingCopy(
   refinementFeedback: string = "",
   refinementType: 'Fix' | 'Remake' = 'Remake',
   previousContent: string = "",
-  systemPromptOverride?: string
+  systemPromptOverride?: string,
+  knowledgeContext?: string
 ): Promise<{ text: string; sources?: any[] }> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
   
@@ -337,11 +338,18 @@ export async function generateMarketingCopy(
     `;
   }
 
+  const baseSystemInstruction = "You are an Elite Direct Response Copywriter. Your goal is high conversion through emotional resonance and simple logic.";
+  let finalSystemInstruction = systemPromptOverride || baseSystemInstruction;
+
+  if (knowledgeContext) {
+    finalSystemInstruction += `\n\nREQUIRED KNOWLEDGE & TACTICS TO APPLY:\n${knowledgeContext}`;
+  }
+
   const response: GenerateContentResponse = await ai.models.generateContent({
     model: global.model,
     contents: `${isRefinement ? "REFINEMENT: " + refinementFeedback : "GENERATE NEW COPY."} BRIEF: ${brief} ${assetSpecificPrompt}`,
     config: {
-      systemInstruction: systemPromptOverride || "You are an Elite Direct Response Copywriter. Your goal is high conversion through emotional resonance and simple logic.",
+      systemInstruction: finalSystemInstruction,
       tools: global.useGoogleSearch ? [{ googleSearch: {} }] : undefined,
     },
   });

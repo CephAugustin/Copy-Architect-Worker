@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AssetType, EmailOptions, LPOptions, VSLOptions, AdOptions, GlobalSettings, GeneratedAsset, BriefInputs, SavedPrompt } from './types';
+import { AssetType, EmailOptions, LPOptions, VSLOptions, AdOptions, GlobalSettings, GeneratedAsset, BriefInputs, SavedPrompt, KnowledgeEntry } from './types';
 import { generateMarketingCopy, autoFillContext, buildFullStrategicBrief, recommendVSLSettings, recommendAdSettings, recommendLPSettings, analyzeReferenceAsset } from './geminiService';
 import { 
   Mail, Layout, Video, Megaphone, Settings, Zap, Copy, Check, Trash2, 
@@ -18,6 +18,7 @@ import TeamManager from './TeamManager';
 import PromptsManager from './PromptsManager';
 import { auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { fetchKnowledgeEntries } from './dbService';
 
 // --- Constants ---
 
@@ -512,15 +513,28 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentView, setCurrentView] = useState<ViewState>('workspace');
   const [activeSystemPrompt, setActiveSystemPrompt] = useState<SavedPrompt | null>(null);
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+
+  const refreshKnowledgeEntries = async () => {
+    const userId = auth.currentUser?.uid;
+    if (userId) {
+      const entries = await fetchKnowledgeEntries(userId);
+      setKnowledgeEntries(entries);
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.emailVerified) {
         setIsAuthenticated(true);
         setCurrentView('workspace');
+        // Fetch knowledge entries once authenticated
+        const entries = await fetchKnowledgeEntries(user.uid);
+        setKnowledgeEntries(entries);
       } else {
         setIsAuthenticated(false);
         setCurrentView('workspace');
+        setKnowledgeEntries([]);
       }
     });
 
@@ -745,6 +759,19 @@ export default function App() {
       const assetToRefine = assetIdToRefine ? assets.find(a => a.id === assetIdToRefine) : null;
       const type = assetToRefine ? assetToRefine.type : activeTab as AssetType;
       const options = type === 'Email' ? emailOpts : type === 'Landing Page' ? lpOpts : type === 'VSL' ? vslOpts : adOpts;
+      
+      // Filter relevant knowledge base entries
+      const typeLabel = type === 'Landing Page' ? 'landing_page' : type.toLowerCase();
+      const relevantEntries = knowledgeEntries.filter(entry => 
+        entry.label === typeLabel || 
+        entry.label === 'general' || 
+        entry.label === 'tactics'
+      );
+      
+      const knowledgeContext = relevantEntries
+        .map(e => `[${e.label.toUpperCase()}: ${e.title}]\n${e.content}`)
+        .join('\n\n---\n\n');
+
       const result = await generateMarketingCopy(
         activeContext, 
         type, 
@@ -754,7 +781,8 @@ export default function App() {
         refinementFeedback, 
         refinementType, 
         assetToRefine?.content || "",
-        activeSystemPrompt?.content
+        activeSystemPrompt?.content,
+        knowledgeContext
       );
       if (assetIdToRefine) {
         setAssets(prev => prev.map(a => a.id === assetIdToRefine ? { ...a, content: result.text, timestamp: Date.now() } : a));
@@ -906,7 +934,11 @@ export default function App() {
         <div className="flex-1 min-w-0 h-screen overflow-y-auto no-scrollbar">
            <main className="min-h-full">
               {currentView === 'workspace' && <Workspace onEnterLab={() => setCurrentView('editor')} />}
-              {currentView === 'knowledge' && <div className="max-w-[1200px] mx-auto px-8 py-12"><KnowledgeBase /></div>}
+              {currentView === 'knowledge' && (
+                <div className="max-w-[1200px] mx-auto px-8 py-12">
+                  <KnowledgeBase onUpdate={refreshKnowledgeEntries} />
+                </div>
+              )}
               {currentView === 'files' && <div className="max-w-[1200px] mx-auto px-8 py-12"><FileManager /></div>}
               {currentView === 'notes' && <div className="max-w-[1200px] mx-auto px-8 py-12"><NotesManager /></div>}
               {currentView === 'team' && <div className="max-w-[1200px] mx-auto px-8 py-12"><TeamManager /></div>}

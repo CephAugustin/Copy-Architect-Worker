@@ -13,7 +13,7 @@ const LABELS = [
   { id: 'tactics', label: 'Tactics', color: 'bg-amber-500/10 text-amber-400' },
 ];
 
-export default function KnowledgeBase() {
+export default function KnowledgeBase({ onUpdate }: { onUpdate?: () => void }) {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -76,6 +76,7 @@ export default function KnowledgeBase() {
     }
     setForm({ title: '', label: 'general', content: '', tags: '', priority: 3 });
     loadEntries();
+    if (onUpdate) onUpdate();
   };
 
   const handleDelete = async () => {
@@ -84,6 +85,7 @@ export default function KnowledgeBase() {
       await deleteKnowledgeEntry(userId, showDeleteConfirm.knowledgeId);
       setShowDeleteConfirm(null);
       loadEntries();
+      if (onUpdate) onUpdate();
     }
   };
 
