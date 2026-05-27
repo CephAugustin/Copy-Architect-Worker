@@ -14,7 +14,7 @@ export interface EmailOptions {
 }
 
 export interface LPOptions {
-  structureType: 'SaaS Acceleration Matrix' | 'High-Ticket Authority Close' | 'Lead Magnet Value-Stacker';
+  structureType: 'SaaS Acceleration Matrix' | 'High-Ticket Authority Close' | 'Lead Magnet Value-Stacker' | 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)';
   focusStrategy: 'Relatable Problem' | 'Highlighting Benefit';
   copyStyle: 'Belief Shift' | 'Direct Response';
   ctaText: string;

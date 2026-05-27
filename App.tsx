@@ -62,6 +62,17 @@ const LP_FRAMEWORKS = [
       { step: '4. TRUST SIGNAL', detail: 'Why this is better than most paid products in the space.' },
       { step: '5. GRATIFICATION CTA', detail: 'Immediate download/access button.' }
     ]
+  },
+  { 
+    id: 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)', 
+    name: 'Live Event Registration (Webinar/Workshop)', 
+    description: 'Designed for webinars, workshops, challenges, masterclasses, and live training events.',
+    structure: [
+      { step: '1. HERO SECTION', detail: 'Clear bold promise, event name, date, time, one-sentence transformation statment, registration CTA, optional countdown.' },
+      { step: '2. WHAT YOU’LL LEARN', detail: '3–7 outcome-focused bullet points emphasizing transformation, clarity, and value.' },
+      { step: '3. EVENT DETAILS', detail: 'Date, time, duration, location/platform, target audience, and set expectations.' },
+      { step: '4. SPEAKER CREDIBILITY', detail: 'Short authority bio, relevant achievements/credentials, social proof.' }
+    ]
   }
 ];
 
@@ -135,13 +146,20 @@ const LP_STRUCTURE_BLOCKS: Record<string, string[]> = {
     'Value Stack Introduction', 'Bonus Breakdown (Free Gift Sections)', 'Reinforced Value Comparison', 'Social Proof (Expanded)', 
     'Soft Objection Handling', 'What Members Receive (Preview)', 'Transparency Section', 'Urgency & Action Trigger', 
     'What To Do Next', 'Final Value Stack & CTA', 'Guarantee / Risk Reversal', 'Legal / FAQ / Fine Print'
+  ],
+  'Live Event Registration Page Framework (Free Training / Value Stack Funnel)': [
+    '1. HERO SECTION (Clear Promise, Details, Transformation, CTA, Countdown)',
+    '2. WHAT YOU’LL LEARN (3-7 outcome bullet points)',
+    '3. EVENT DETAILS (Date, livestream platform, logistics, audience expectation)',
+    '4. SPEAKER CREDIBILITY (Authority bio, achievements, credentials, social proof)'
   ]
 };
 
 const LP_PRODUCT_TYPES: Record<string, string> = {
   'SaaS Acceleration Matrix': 'AI Tool / Software Application',
   'High-Ticket Authority Close': 'High-Ticket Service / Coaching Offer',
-  'Lead Magnet Value-Stacker': 'Free Training / Value Stack Funnel'
+  'Lead Magnet Value-Stacker': 'Free Training / Value Stack Funnel',
+  'Live Event Registration Page Framework (Free Training / Value Stack Funnel)': 'Live Training / Webinar / Event'
 };
 
 const EMAIL_SEQUENCES = [
@@ -486,6 +504,8 @@ const getAssetSections = (content: string) => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'Brief' | AssetType>('Brief');
+  const [briefSetupMode, setBriefSetupMode] = useState<'generate' | 'paste'>('generate');
+  const [pastedBrief, setPastedBrief] = useState('');
   const [quickPaste, setQuickPaste] = useState('');
   const [inputs, setInputs] = useState<BriefInputs>({
     businessName: '', industry: '', targetAudience: '', productDescription: '', 
@@ -752,6 +772,15 @@ export default function App() {
     handleInject();
   };
 
+  const handleActivatePastedBrief = () => {
+    if (!pastedBrief.trim()) return;
+    setFullBriefText(pastedBrief);
+    setBlueprint(parseFullBrief(pastedBrief));
+    setActiveContext(pastedBrief);
+    setIsInjecting(true);
+    setTimeout(() => setIsInjecting(false), 2000);
+  };
+
   const handleGenerate = async (assetIdToRefine?: string, refinementType: 'Fix' | 'Remake' = 'Remake') => {
     if (!activeContext) { setActiveTab('Brief'); return; }
     setIsGeneratingAsset(true);
@@ -813,6 +842,7 @@ export default function App() {
   const handleReset = () => {
     setInputs({ businessName: '', industry: '', targetAudience: '', productDescription: '', primaryUSP: '', painPoints: '', tone: 'Professional & Direct', goal: 'Lead Generation' });
     setQuickPaste('');
+    setPastedBrief('');
   };
 
   const toggleLPBlock = (block: string) => {
@@ -1011,48 +1041,93 @@ export default function App() {
                     <button onClick={() => { handleReset(); setFullBriefText(''); setBlueprint(emptyBlueprint); }} className="px-4 py-2 bg-slate-800/40 border border-slate-700/60 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all"><RotateCcw size={14} className="inline mr-2" /> Clear</button>
                   </div>
                   <div className="space-y-8">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400"><Zap size={14} fill="currentColor" /> 1. Quick Paste</div>
-                      <textarea value={quickPaste} onChange={(e) => setQuickPaste(e.target.value)} placeholder="Paste data here..." className="w-full h-32 bg-slate-950/60 border border-slate-800/60 rounded-2xl p-5 text-xs font-medium outline-none resize-none leading-relaxed" />
-                      <SmartLoadingButton 
-                        onClick={handleAutoFill} 
-                        isLoading={isAutoFilling} 
-                        loadingPhrases={["Parsing text...", "Identifying entities...", "Extracting intent..."]}
-                        label="Auto-Fill from Text"
-                        icon={Wand2}
-                        variant="secondary"
-                        disabled={!quickPaste}
-                        className="w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest"
-                      />
+                    {/* Setup Mode Toggle */}
+                    <div className="flex bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+                      <button 
+                        onClick={() => setBriefSetupMode('generate')}
+                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${briefSetupMode === 'generate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      >
+                        Generate Brief
+                      </button>
+                      <button 
+                        onClick={() => setBriefSetupMode('paste')}
+                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${briefSetupMode === 'paste' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                      >
+                        Use Pre-made Brief
+                      </button>
                     </div>
-                    <div className="h-[1px] bg-slate-800/60"></div>
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400"><Info size={14} /> 2. Verify Context</div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <input placeholder="Business Name" value={inputs.businessName} onChange={e => setInputs({...inputs, businessName: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
-                        <input placeholder="Industry" value={inputs.industry} onChange={e => setInputs({...inputs, industry: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+
+                    {briefSetupMode === 'generate' ? (
+                      <>
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400"><Zap size={14} fill="currentColor" /> 1. Quick Paste</div>
+                          <textarea value={quickPaste} onChange={(e) => setQuickPaste(e.target.value)} placeholder="Paste data here..." className="w-full h-32 bg-slate-950/60 border border-slate-800/60 rounded-2xl p-5 text-xs font-medium outline-none resize-none leading-relaxed" />
+                          <SmartLoadingButton 
+                            onClick={handleAutoFill} 
+                            isLoading={isAutoFilling} 
+                            loadingPhrases={["Parsing text...", "Identifying entities...", "Extracting intent..."]}
+                            label="Auto-Fill from Text"
+                            icon={Wand2}
+                            variant="secondary"
+                            disabled={!quickPaste}
+                            className="w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest"
+                          />
+                        </div>
+                        <div className="h-[1px] bg-slate-800/60"></div>
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400"><Info size={14} /> 2. Verify Context</div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <input placeholder="Business Name" value={inputs.businessName} onChange={e => setInputs({...inputs, businessName: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+                            <input placeholder="Industry" value={inputs.industry} onChange={e => setInputs({...inputs, industry: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+                          </div>
+                          <input placeholder="Ideal Target Audience" value={inputs.targetAudience} onChange={e => setInputs({...inputs, targetAudience: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+                          <textarea placeholder="Product Description" value={inputs.productDescription} onChange={e => setInputs({...inputs, productDescription: e.target.value})} className="w-full h-20 bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none resize-none" />
+                          <input placeholder="Primary USP" value={inputs.primaryUSP} onChange={e => setInputs({...inputs, primaryUSP: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+                          <input placeholder="Pain Points" value={inputs.painPoints} onChange={e => setInputs({...inputs, painPoints: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
+                          <div className="grid grid-cols-2 gap-4">
+                             <select value={inputs.tone} onChange={e => setInputs({...inputs, tone: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none"><option>Professional & Direct</option><option>Witty & Irreverent</option><option>Elite & Authoritative</option></select>
+                             <select value={inputs.goal} onChange={e => setInputs({...inputs, goal: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none"><option>Lead Generation</option><option>Direct Sales</option><option>Affiliate Marketing</option></select>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400"><ClipboardList size={14} /> Paste Ready-Made Brief</div>
+                        <p className="text-slate-500 text-xs font-medium leading-relaxed">
+                          Paste your pre-written strategic brief, client intake form, or brand avatar summary. This text will be directly connected to the copywriting engine to guide tone, strategy, and layout.
+                        </p>
+                        <textarea 
+                          value={pastedBrief} 
+                          onChange={(e) => setPastedBrief(e.target.value)} 
+                          placeholder="Paste your custom brief here..." 
+                          className="w-full h-[330px] bg-slate-950/60 border border-slate-800/60 rounded-2xl p-5 text-xs font-medium outline-none resize-none leading-relaxed" 
+                        />
                       </div>
-                      <input placeholder="Ideal Target Audience" value={inputs.targetAudience} onChange={e => setInputs({...inputs, targetAudience: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
-                      <textarea placeholder="Product Description" value={inputs.productDescription} onChange={e => setInputs({...inputs, productDescription: e.target.value})} className="w-full h-20 bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none resize-none" />
-                      <input placeholder="Primary USP" value={inputs.primaryUSP} onChange={e => setInputs({...inputs, primaryUSP: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
-                      <input placeholder="Pain Points" value={inputs.painPoints} onChange={e => setInputs({...inputs, painPoints: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none" />
-                      <div className="grid grid-cols-2 gap-4">
-                         <select value={inputs.tone} onChange={e => setInputs({...inputs, tone: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none"><option>Professional & Direct</option><option>Witty & Irreverent</option><option>Elite & Authoritative</option></select>
-                         <select value={inputs.goal} onChange={e => setInputs({...inputs, goal: e.target.value})} className="w-full bg-slate-950/60 border border-slate-800/60 rounded-xl px-4 py-3 text-xs font-bold outline-none"><option>Lead Generation</option><option>Direct Sales</option><option>Affiliate Marketing</option></select>
-                      </div>
-                    </div>
+                    )}
                   </div>
                   <div className="flex gap-4 pt-4">
-                    <button onClick={handleReset} className="flex-1 py-4 bg-slate-800/40 border border-slate-700/60 rounded-2xl font-black text-[10px] uppercase text-slate-400 hover:text-white transition-all"><RotateCcw size={16} className="inline mr-1" /> Reset</button>
-                    <SmartLoadingButton 
-                        onClick={handleBuildBrief} 
-                        isLoading={isBuilding} 
-                        loadingPhrases={["Synthesizing data...", "Applying psychology...", "Finalizing strategy..."]}
-                        label="Build Full Brief"
-                        icon={ChevronRight}
-                        disabled={!inputs.businessName && !quickPaste.trim()}
-                        className="flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase"
-                      />
+                    {briefSetupMode === 'generate' ? (
+                      <>
+                        <button onClick={handleReset} className="flex-1 py-4 bg-slate-800/40 border border-slate-700/60 rounded-2xl font-black text-[10px] uppercase text-slate-400 hover:text-white transition-all"><RotateCcw size={16} className="inline mr-1" /> Reset</button>
+                        <SmartLoadingButton 
+                            onClick={handleBuildBrief} 
+                            isLoading={isBuilding} 
+                            loadingPhrases={["Synthesizing data...", "Applying psychology...", "Finalizing strategy..."]}
+                            label="Build Full Brief"
+                            icon={ChevronRight}
+                            disabled={!inputs.businessName && !quickPaste.trim()}
+                            className="flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase"
+                          />
+                      </>
+                    ) : (
+                      <button 
+                        onClick={handleActivatePastedBrief} 
+                        disabled={!pastedBrief.trim()}
+                        className="w-full py-4 bg-indigo-600 border border-indigo-500 rounded-2xl font-black text-[10px] uppercase text-white hover:bg-indigo-500 disabled:bg-slate-800/40 disabled:border-slate-700/40 disabled:text-slate-500 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Check size={16} /> {pastedBrief.trim() && activeContext === pastedBrief ? "Connected & Active!" : "Activate & Connect Brief"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

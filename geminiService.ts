@@ -260,6 +260,35 @@ export async function generateMarketingCopy(
       ? `\nINSPIRATION REFERENCE DATA (Extracted from your provided link/image): \n${opt.referenceAsset.analysis}\nCrucially integrate the successful hook, structure, and psychological triggers from this reference into the new copy while adhering to the Brief context.`
       : "";
 
+    let structuralFrameworkRules = "";
+    if (opt.structureType === 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)') {
+      structuralFrameworkRules = `
+      CRITICAL: You MUST structure this landing page using the "Live Event Registration Page Framework (Free Training / Value Stack Funnel)" structure:
+      
+      1. HERO SECTION
+         - Clear, bold event promise
+         - Event name, date, and time
+         - One-sentence transformation statement
+         - Primary CTA: "${opt.ctaText || "Reserve Your Spot"}"
+         - Optional countdown timer
+         
+      2. WHAT YOU’LL LEARN
+         - 3–7 outcome-focused bullet points
+         - Emphasize transformation, clarity, and value
+         
+      3. EVENT DETAILS
+         - Date, time, duration
+         - Location or livestream platform
+         - Who the event is for
+         - What to bring or expect
+         
+      4. SPEAKER CREDIBILITY
+         - Short authority bio
+         - Relevant achievements, results, or credentials
+         - Social proof indicators
+      `;
+    }
+
     assetSpecificPrompt = `
       TASK: Write a highly persuasive "${opt.pageType}". 
       Goal: ${opt.pageGoal}. 
@@ -269,6 +298,8 @@ export async function generateMarketingCopy(
       Blocks: ${opt.includeBlocks.join(', ')}. 
       CTA: ${opt.ctaText}.
       ${inspirationNote}
+      
+      ${structuralFrameworkRules}
 
       CRITICAL FINAL SECTIONS (REQUIRED):
       
