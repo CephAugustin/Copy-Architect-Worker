@@ -1,5 +1,6 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { AssetType, EmailOptions, LPOptions, VSLOptions, AdOptions, GlobalSettings, BriefInputs } from "./types";
+import { WEBSITE_FRAMEWORKS } from "./websiteFrameworks";
 
 const EMAIL_STYLE_GUIDE = `
 - Casual, conversational tone.
@@ -261,7 +262,29 @@ export async function generateMarketingCopy(
       : "";
 
     let structuralFrameworkRules = "";
-    if (opt.structureType === 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)') {
+    const isWebsiteCopy = opt.mode === 'website_copy';
+    
+    if (isWebsiteCopy && opt.websiteType && opt.websitePage) {
+      const config = WEBSITE_FRAMEWORKS[opt.websiteType];
+      if (config) {
+        const pageConfig = config.pages[opt.websitePage];
+        if (pageConfig) {
+          const stepsStr = pageConfig.structure.map((s, idx) => `${idx + 1}. ${s.step.toUpperCase()}\n   - ${s.detail}`).join('\n');
+          structuralFrameworkRules = `
+          CRITICAL: You are writing a specific page for a full multi-page website brand experience.
+          - Website Model: ${opt.websiteType} Website
+          - Site-Wide Narrative Directive: ${config.narrative}
+          - Specific Page to Write: ${opt.websitePage}
+          - Page Purpose: ${pageConfig.description}
+          
+          You MUST structure this copy explicitly around the following Page Copy Framework steps:
+          ${stepsStr}
+          
+          Ensure the style remains consistent with the brand's global narrative while executing these precise structural sections.
+          `;
+        }
+      }
+    } else if (opt.structureType === 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)') {
       structuralFrameworkRules = `
       CRITICAL: You MUST structure this landing page using the "Live Event Registration Page Framework (Free Training / Value Stack Funnel)" structure:
       
@@ -289,13 +312,19 @@ export async function generateMarketingCopy(
       `;
     }
 
+    const appliedFramework = isWebsiteCopy 
+      ? `Website: ${opt.websiteType} - ${opt.websitePage}` 
+      : opt.structureType;
+
+    const includeBlocksText = opt.includeBlocks ? opt.includeBlocks.join(', ') : "All standard structural blocks";
+
     assetSpecificPrompt = `
-      TASK: Write a highly persuasive "${opt.pageType}". 
+      TASK: Write a highly persuasive and complete page copy for: ${isWebsiteCopy ? `Website Page "${opt.websitePage}" for a ${opt.websiteType} site` : `"${opt.pageType}"`}.
       Goal: ${opt.pageGoal}. 
-      Framework: ${opt.structureType}. 
+      Framework: ${appliedFramework}. 
       Style: ${opt.copyStyle}. 
       Strategy: ${opt.focusStrategy}. 
-      Blocks: ${opt.includeBlocks.join(', ')}. 
+      Blocks: ${includeBlocksText}. 
       CTA: ${opt.ctaText}.
       ${inspirationNote}
       
@@ -305,7 +334,7 @@ export async function generateMarketingCopy(
       
       1. "--- LANDING PAGE ARCHITECTURE SUMMARY ---"
       Provide a comprehensive summary including:
-      - **Framework Applied**: ${opt.structureType}
+      - **Framework Applied**: ${appliedFramework}
       - **Primary Objective**: ${opt.pageGoal}
       - **Architectural Flow (In Order)**:
         List every section generated above in the exact order they appear.
@@ -317,7 +346,7 @@ export async function generateMarketingCopy(
       Format this as a detailed technical architectural breakdown.
 
       2. "--- A/B TESTING STRATEGY ---"
-      Suggest 3 specific variables to split-test for this landing page to optimize conversion performance.
+      Suggest 3 specific variables to split-test for this page copy to optimize conversion performance.
     `;
   } else if (assetType === 'VSL') {
     const opt = options as VSLOptions;

@@ -2,5 +2,5 @@
   "name": "New Copy Factory",
   "description": "A high-performance marketing copy dashboard that separates business context from asset frameworks to generate hyper-personalized multi-channel campaigns.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

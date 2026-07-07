@@ -14,18 +14,21 @@ export interface EmailOptions {
 }
 
 export interface LPOptions {
-  structureType: 'SaaS Acceleration Matrix' | 'High-Ticket Authority Close' | 'Lead Magnet Value-Stacker' | 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)';
+  structureType: 'SaaS Acceleration Matrix' | 'High-Ticket Authority Close' | 'Lead Magnet Value-Stacker' | 'Live Event Registration Page Framework (Free Training / Value Stack Funnel)' | string;
   focusStrategy: 'Relatable Problem' | 'Highlighting Benefit';
   copyStyle: 'Belief Shift' | 'Direct Response';
   ctaText: string;
   includeBlocks: string[];
-  pageType: 'Opt-in Page' | 'Registration Page' | 'Sales Page';
+  pageType: 'Opt-in Page' | 'Registration Page' | 'Sales Page' | string;
   pageGoal: string;
   referenceAsset?: {
     type: 'image' | 'url';
     data: string; // base64 for image, string for url
     analysis?: string;
   };
+  mode?: 'single_page' | 'website_copy';
+  websiteType?: 'SaaS' | 'eCommerce' | 'Local Business' | 'Digital Services' | 'Portfolio';
+  websitePage?: string;
 }
 
 export interface VSLOptions {
