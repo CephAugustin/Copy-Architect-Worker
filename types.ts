@@ -11,6 +11,8 @@ export interface EmailOptions {
   quantity: number;
   wordCount: string;
   userName: string;
+  optimizeExisting?: boolean;
+  existingCopy?: string;
 }
 
 export interface LPOptions {
@@ -29,6 +31,8 @@ export interface LPOptions {
   mode?: 'single_page' | 'website_copy';
   websiteType?: 'SaaS' | 'eCommerce' | 'Local Business' | 'Digital Services' | 'Portfolio';
   websitePage?: string;
+  optimizeExisting?: boolean;
+  existingCopy?: string;
 }
 
 export interface VSLOptions {
@@ -38,6 +42,8 @@ export interface VSLOptions {
   tone: string;
   vslGoal: string;
   targetLandingPage: 'Opt-in Page' | 'Registration Page' | 'Sales Page';
+  optimizeExisting?: boolean;
+  existingCopy?: string;
 }
 
 export interface AdOptions {
@@ -50,12 +56,20 @@ export interface AdOptions {
   adGoal: string;
   targetContext: string;
   tone: string;
+  optimizeExisting?: boolean;
+  existingCopy?: string;
 }
 
 export interface GlobalSettings {
   assetBatching: number;
-  model: 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
+  model: 'gemini-3.5-flash' | 'gemini-3.1-pro-preview';
   useGoogleSearch: boolean;
+  performanceMode: boolean;
+  generationMode: 'fast' | 'genius';
+  creativityEngine: number;
+  autoSaveAssets: boolean;
+  defaultLanguage: string;
+  theme?: 'cyber' | 'neon' | 'solar';
 }
 
 export interface BriefInputs {
@@ -111,6 +125,7 @@ export interface FileEntry {
   folderId?: string;
   size: number;
   createdAt: number;
+  content?: string;
 }
 
 export interface Note {
@@ -138,3 +153,15 @@ export interface SavedPrompt {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ClientProfile {
+  profileId: string;
+  userId: string;
+  clientName: string;
+  targetAudience: string;
+  mainOffer: string;
+  brandVoiceSummary: string;
+  createdAt: number;
+  updatedAt: number;
+}
+

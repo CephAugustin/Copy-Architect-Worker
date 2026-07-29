@@ -10,6 +10,7 @@ import {
   BriefInputs,
   SavedPrompt,
   KnowledgeEntry,
+  ClientProfile,
 } from "./types";
 import {
   generateMarketingCopy,
@@ -86,6 +87,7 @@ import {
   StickyNote,
   Users,
   Terminal,
+  Share2,
 } from "lucide-react";
 import Auth from "./Auth";
 import Workspace from "./Workspace";
@@ -94,9 +96,12 @@ import FileManager from "./FileManager";
 import NotesManager from "./NotesManager";
 import TeamManager from "./TeamManager";
 import PromptsManager from "./PromptsManager";
+import ClientProfilesManager from "./ClientProfilesManager";
+import CopyAuditor from "./CopyAuditor";
+import SocialMediaGenerator from "./SocialMediaGenerator";
 import { auth } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { fetchKnowledgeEntries } from "./dbService";
+import { fetchKnowledgeEntries, saveFileEntry, saveUserSettings, fetchUserSettings } from "./dbService";
 
 // --- Constants ---
 
@@ -107,7 +112,8 @@ type ViewState =
   | "files"
   | "notes"
   | "team"
-  | "prompts";
+  | "prompts"
+  | "profiles";
 
 // Existing constants...
 
@@ -963,6 +969,20 @@ export default function App() {
   } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [assets, setAssets] = useState<GeneratedAsset[]>([]);
+  const [selectedClientProfile, setSelectedClientProfile] = useState<ClientProfile | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings>({
+    assetBatching: 1,
+    model: "gemini-3.5-flash",
+    useGoogleSearch: false,
+    performanceMode: false,
+    generationMode: "fast",
+    creativityEngine: 0.7,
+    autoSaveAssets: false,
+    defaultLanguage: "English",
+    theme: "cyber",
+  });
 
   // Auth and Navigation State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -982,10 +1002,126 @@ export default function App() {
   };
 
   useEffect(() => {
+    const local = localStorage.getItem("copywriting_app_settings");
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        setGlobalSettings((prev) => ({
+          ...prev,
+          ...parsed,
+        }));
+      } catch (e) {
+        console.error("Failed to parse local copywriting_app_settings", e);
+      }
+    }
+  }, []);
+
+  const applyTheme = (themeName: "cyber" | "neon" | "solar") => {
+    const root = document.documentElement;
+    if (themeName === "neon") {
+      root.style.setProperty("--primary-color", "#22c55e");
+      root.style.setProperty("--primary-hover", "#15803d");
+      root.style.setProperty("--primary-light", "#4ade80");
+      root.style.setProperty("--secondary-color", "#14b8a6");
+      root.style.setProperty("--secondary-hover", "#0d9488");
+      root.style.setProperty("--secondary-light", "#2dd4bf");
+      root.style.setProperty("--indigo-950", "#052e16");
+      root.style.setProperty("--purple-950", "#042f2e");
+      root.style.setProperty("--bg-app", "#090d0a");
+      root.style.setProperty("--bg-card", "#121b14");
+    } else if (themeName === "solar") {
+      root.style.setProperty("--primary-color", "#f97316");
+      root.style.setProperty("--primary-hover", "#ea580c");
+      root.style.setProperty("--primary-light", "#fb923c");
+      root.style.setProperty("--secondary-color", "#ef4444");
+      root.style.setProperty("--secondary-hover", "#dc2626");
+      root.style.setProperty("--secondary-light", "#f87171");
+      root.style.setProperty("--indigo-950", "#431407");
+      root.style.setProperty("--purple-950", "#450a0a");
+      root.style.setProperty("--bg-app", "#0f0702");
+      root.style.setProperty("--bg-card", "#1a0f09");
+    } else {
+      // cyber (Copy Factory Theme)
+      root.style.setProperty("--primary-color", "#00F0FF");
+      root.style.setProperty("--primary-hover", "#00B4C0");
+      root.style.setProperty("--primary-light", "#80FAFF");
+      root.style.setProperty("--secondary-color", "#39FF14");
+      root.style.setProperty("--secondary-hover", "#2BC40E");
+      root.style.setProperty("--secondary-light", "#9BFF8A");
+      root.style.setProperty("--indigo-950", "#042f2e");
+      root.style.setProperty("--purple-950", "#052e16");
+      root.style.setProperty("--bg-app", "#0B0C10");
+      root.style.setProperty("--bg-card", "#15171E");
+    }
+  };
+
+  useEffect(() => {
+    applyTheme(globalSettings.theme || "cyber");
+  }, [globalSettings.theme]);
+
+  const saveSettingsToStore = async (settings: GlobalSettings) => {
+    localStorage.setItem("copywriting_app_settings", JSON.stringify(settings));
+    if (auth.currentUser) {
+      try {
+        await saveUserSettings(auth.currentUser.uid, settings);
+      } catch (err) {
+        console.error("Failed to save user settings to Firestore:", err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (globalSettings.performanceMode) {
+      document.body.classList.add("disable-heavy-animations");
+    } else {
+      document.body.classList.remove("disable-heavy-animations");
+    }
+  }, [globalSettings.performanceMode]);
+
+  useEffect(() => {
+    const styleId = "disable-heavy-animations-style";
+    let styleEl = document.getElementById(styleId);
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.id = styleId;
+      styleEl.innerHTML = `
+        .disable-heavy-animations *,
+        .disable-heavy-animations *::before,
+        .disable-heavy-animations *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      `;
+      document.head.appendChild(styleEl);
+    }
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.emailVerified) {
         setIsAuthenticated(true);
         setCurrentView("workspace");
+        
+        // Load settings from Firestore
+        try {
+          const dbSettings = await fetchUserSettings(user.uid);
+          if (dbSettings) {
+            const mergedSettings = {
+              ...globalSettings,
+              ...dbSettings,
+            };
+            setGlobalSettings(mergedSettings);
+            localStorage.setItem("copywriting_app_settings", JSON.stringify(mergedSettings));
+          } else {
+            // If authenticated but no settings saved in DB yet, upload current local settings
+            const local = localStorage.getItem("copywriting_app_settings");
+            const currentSettings = local ? JSON.parse(local) : globalSettings;
+            await saveUserSettings(user.uid, currentSettings);
+          }
+        } catch (err) {
+          console.error("Error syncing settings with database:", err);
+        }
+
         // Fetch knowledge entries once authenticated
         const entries = await fetchKnowledgeEntries(user.uid);
         setKnowledgeEntries(entries);
@@ -1016,16 +1152,6 @@ export default function App() {
     null,
   );
   const [refinementFeedback, setRefinementFeedback] = useState("");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  const [globalSettings, setGlobalSettings] = useState<
-    GlobalSettings & { performanceMode: boolean }
-  >({
-    assetBatching: 1,
-    model: "gemini-3-flash-preview",
-    useGoogleSearch: false,
-    performanceMode: false,
-  });
 
   const [emailOpts, setEmailOpts] = useState<EmailOptions>({
     sequenceType: "8 Email Welcome Sequence",
@@ -1037,6 +1163,8 @@ export default function App() {
     quantity: 1,
     wordCount: "250",
     userName: "Strategist",
+    optimizeExisting: false,
+    existingCopy: "",
   });
 
   const [lpOpts, setLpOpts] = useState<LPOptions>({
@@ -1050,6 +1178,8 @@ export default function App() {
     mode: "single_page",
     websiteType: "SaaS",
     websitePage: "Home Page (Clarity → Value → Proof → Action)",
+    optimizeExisting: false,
+    existingCopy: "",
   });
 
   const [vslOpts, setVslOpts] = useState<VSLOptions>({
@@ -1059,6 +1189,8 @@ export default function App() {
     tone: "Authoritative",
     vslGoal: "Convert viewer into a high-ticket coaching client",
     targetLandingPage: "Sales Page",
+    optimizeExisting: false,
+    existingCopy: "",
   });
 
   const [adOpts, setAdOpts] = useState<AdOptions>({
@@ -1071,6 +1203,8 @@ export default function App() {
     adGoal: "Generate high-quality leads for my business",
     targetContext: "Potential customers who have never heard of us before",
     tone: "Professional & Authoritative",
+    optimizeExisting: false,
+    existingCopy: "",
   });
 
   // Update Email Recommendations
@@ -1292,6 +1426,7 @@ export default function App() {
         assetToRefine?.content || "",
         activeSystemPrompt?.content,
         knowledgeContext,
+        selectedClientProfile || undefined,
       );
       if (assetIdToRefine) {
         setAssets((prev) =>
@@ -1313,6 +1448,25 @@ export default function App() {
           },
           ...prev,
         ]);
+      }
+
+      // Auto-Save Assets configuration
+      if (globalSettings.autoSaveAssets && auth.currentUser) {
+        try {
+          const sizeInBytes = result.text.length;
+          const dateStr = new Date().toLocaleDateString().replace(/\//g, '-');
+          const newFile = {
+            fileId: Math.random().toString(36).substr(2, 9),
+            userId: auth.currentUser.uid,
+            name: `${type}_Asset_${dateStr}.txt`,
+            size: sizeInBytes,
+            createdAt: Date.now(),
+            content: result.text
+          };
+          await saveFileEntry(newFile);
+        } catch (saveErr) {
+          console.error("Auto-Save of asset failed:", saveErr);
+        }
       }
     } catch (err) {
       alert("Generation failed.");
@@ -1382,21 +1536,21 @@ export default function App() {
   }) => (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-300 relative group ${
+      className={`w-full flex items-center gap-4 px-6 py-4 transition-all duration-300 relative group ${
         active
-          ? "bg-indigo-600 text-white shadow-[0_10px_30px_rgba(99,102,241,0.2)]"
-          : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/40"
+          ? "bg-indigo-500/10 text-indigo-400 border-l-2 border-indigo-400 rounded-r-2xl pl-[22px]"
+          : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/40 rounded-2xl"
       }`}
     >
       <Icon
         size={20}
-        className={active ? "text-white" : "group-hover:text-indigo-400"}
+        className={active ? "text-indigo-400" : "group-hover:text-indigo-400"}
       />
       <span className="text-[11px] font-black uppercase tracking-widest">
         {label}
       </span>
       {active && (
-        <div className="absolute right-4 w-1.5 h-1.5 bg-white rounded-full"></div>
+        <div className="absolute right-4 w-1.5 h-1.5 bg-indigo-400 rounded-full"></div>
       )}
     </button>
   );
@@ -1407,7 +1561,7 @@ export default function App() {
 
   if (currentView !== "editor") {
     return (
-      <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-indigo-500/30 font-sans flex">
+      <div className="min-h-screen bg-[var(--bg-app)] text-slate-200 selection:bg-indigo-500/30 font-sans flex">
         <div
           className="fixed inset-0 pointer-events-none opacity-[0.04]"
           style={{
@@ -1418,14 +1572,14 @@ export default function App() {
         ></div>
 
         {/* Sidebar */}
-        <aside className="w-80 h-screen sticky top-0 border-r border-slate-800/60 bg-[#020617]/40 backdrop-blur-3xl p-8 flex flex-col justify-between z-50">
+        <aside className="w-80 h-screen sticky top-0 border-r border-slate-800/60 bg-[var(--bg-app)]/40 backdrop-blur-3xl p-8 flex flex-col justify-between z-50">
           <div className="space-y-12">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg transform -rotate-6">
                 <ZapIcon size={22} className="text-white" fill="currentColor" />
               </div>
               <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">
-                Copy <span className="text-indigo-400">Architect</span>
+                COPY <span className="text-indigo-400">FACTORY</span>
               </h1>
             </div>
 
@@ -1475,6 +1629,12 @@ export default function App() {
                 active={currentView === "team"}
                 onClick={() => setCurrentView("team")}
               />
+              <SidebarItem
+                icon={User}
+                label="Client Profiles"
+                active={currentView === "profiles"}
+                onClick={() => setCurrentView("profiles")}
+              />
             </div>
           </div>
 
@@ -1510,7 +1670,16 @@ export default function App() {
         <div className="flex-1 min-w-0 h-screen overflow-y-auto no-scrollbar">
           <main className="min-h-full">
             {currentView === "workspace" && (
-              <Workspace onEnterLab={() => setCurrentView("editor")} />
+              <Workspace 
+                onEnterLab={(tab) => {
+                  setCurrentView("editor");
+                  if (tab) {
+                    setActiveTab(tab as any);
+                  }
+                }}
+                selectedClientProfile={selectedClientProfile}
+                onNavigate={(view) => setCurrentView(view)}
+              />
             )}
             {currentView === "knowledge" && (
               <div className="max-w-[1200px] mx-auto px-8 py-12">
@@ -1540,6 +1709,15 @@ export default function App() {
                 />
               </div>
             )}
+            {currentView === "profiles" && (
+              <div className="max-w-[1200px] mx-auto px-8 py-12">
+                <ClientProfilesManager
+                  selectedProfile={selectedClientProfile}
+                  onSelectProfile={setSelectedClientProfile}
+                  globalSettings={globalSettings}
+                />
+              </div>
+            )}
           </main>
         </div>
       </div>
@@ -1547,7 +1725,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-indigo-500/30 font-sans">
+    <div className="min-h-screen bg-[var(--bg-app)] text-slate-200 selection:bg-indigo-500/30 font-sans">
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.04]"
         style={{
@@ -1555,14 +1733,14 @@ export default function App() {
           backgroundSize: "40px 40px",
         }}
       ></div>
-      <header className="sticky top-0 z-40 bg-[#020617]/90 backdrop-blur-xl border-b border-slate-800/60 shadow-2xl">
+      <header className="sticky top-0 z-40 bg-[var(--bg-app)]/90 backdrop-blur-xl border-b border-slate-800/60 shadow-2xl">
         <div className="max-w-[1500px] mx-auto px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-900/40 transform -rotate-6">
               <ZapIcon size={22} className="text-white" fill="currentColor" />
             </div>
             <h1 className="text-xl font-black tracking-tighter text-white uppercase italic hidden md:block">
-              Copy <span className="text-indigo-400">Architect AI</span>
+              COPY <span className="text-indigo-400">FACTORY AI</span>
             </h1>
           </div>
           <nav className="flex items-center gap-2 overflow-x-auto mx-4 no-scrollbar">
@@ -1601,8 +1779,37 @@ export default function App() {
               onClick={() => setActiveTab("Ads")}
               tooltip="Ad Variations"
             />
+            <NavTab
+              label="Copy Auditor"
+              icon={Wand2}
+              active={activeTab === "Auditor"}
+              onClick={() => setActiveTab("Auditor")}
+              tooltip="Critique & Rewrite"
+            />
+            <NavTab
+              label="Social Media"
+              icon={Share2}
+              active={activeTab === "Social"}
+              onClick={() => setActiveTab("Social")}
+              tooltip="Social Post Architect"
+            />
           </nav>
           <div className="flex items-center gap-4">
+            {selectedClientProfile && (
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.1)]">
+                <User size={14} />
+                <span className="text-[10px] font-black uppercase tracking-widest truncate max-w-[120px]">
+                  {selectedClientProfile.clientName} Profile
+                </span>
+                <button
+                  onClick={() => setSelectedClientProfile(null)}
+                  className="hover:text-white ml-1"
+                  title="Clear Active Profile"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             {activeSystemPrompt && (
               <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                 <Terminal size={14} />
@@ -1644,9 +1851,8 @@ export default function App() {
                 <ZapIcon size={12} fill="currentColor" /> Marketing Strategy
                 Architect
               </div>
-              <h2 className="text-6xl font-black text-white italic tracking-tighter uppercase">
-                Elite{" "}
-                <span className="text-indigo-500">Copywriting Briefs</span>
+              <h2 className="text-6xl font-black text-[#F8FAFC] italic tracking-tighter uppercase">
+                Elite Copywriting <span className="text-indigo-400">Briefs</span>
               </h2>
               <p className="text-slate-500 max-w-2xl mx-auto text-base font-medium">
                 From brain dump to comprehensive blueprint. The foundation for
@@ -1655,7 +1861,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 w-full items-start">
               <div className="lg:col-span-4 lg:sticky lg:top-32">
-                <div className="bg-[#0f172a]/80 border border-slate-800/60 rounded-[2rem] p-8 shadow-2xl space-y-8 backdrop-blur-xl">
+                <div className="bg-slate-900/80 border border-slate-800/60 rounded-[2rem] p-8 shadow-2xl space-y-8 backdrop-blur-xl">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
@@ -1859,7 +2065,7 @@ export default function App() {
                           label="Build Full Brief"
                           icon={ChevronRight}
                           disabled={!inputs.businessName && !quickPaste.trim()}
-                          className="flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase"
+                          className="flex-[2] py-4 rounded-2xl font-black text-[10px] uppercase bg-factory-gradient"
                         />
                       </>
                     ) : (
@@ -1879,7 +2085,7 @@ export default function App() {
               </div>
               <div className="lg:col-span-8 pb-32">
                 {!fullBriefText && !isBuilding ? (
-                  <div className="bg-[#0f172a]/40 border border-slate-800/40 rounded-[3rem] h-[800px] flex flex-col items-center justify-center text-center p-20 space-y-6">
+                  <div className="bg-slate-900/40 border border-slate-800/40 rounded-[3rem] h-[800px] flex flex-col items-center justify-center text-center p-20 space-y-6">
                     <div className="w-20 h-20 bg-slate-900/60 rounded-[2.5rem] flex items-center justify-center text-slate-700">
                       <PenTool size={40} />
                     </div>
@@ -1894,7 +2100,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : isBuilding ? (
-                  <div className="bg-[#0f172a]/40 border border-slate-800/40 rounded-[3rem] h-[800px] flex flex-col items-center justify-center text-center p-20 space-y-8 animate-pulse">
+                  <div className="bg-slate-900/40 border border-slate-800/40 rounded-[3rem] h-[800px] flex flex-col items-center justify-center text-center p-20 space-y-8 animate-pulse">
                     <div className="relative">
                       <div className="w-16 h-16 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin"></div>
                       <Sparkles
@@ -1913,7 +2119,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                    <div className="bg-[#0f172a]/60 border border-slate-800/60 rounded-[3rem] p-12 shadow-2xl relative">
+                    <div className="bg-slate-900/60 border border-slate-800/60 rounded-[3rem] p-12 shadow-2xl relative">
                       <div className="flex flex-col md:flex-row md:items-center justify-between mb-16 gap-6">
                         <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase">
                           Strategy Blueprint
@@ -1949,10 +2155,17 @@ export default function App() {
               </div>
             </div>
           </div>
+        ) : activeTab === "Auditor" ? (
+          <CopyAuditor globalSettings={globalSettings} />
+        ) : activeTab === "Social" ? (
+          <SocialMediaGenerator
+            globalSettings={globalSettings}
+            selectedClientProfile={selectedClientProfile}
+          />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 animate-in fade-in zoom-in-95 duration-500">
             <div className="lg:col-span-4 space-y-8">
-              <div className="bg-[#0f172a]/80 border border-slate-800/60 rounded-[3rem] p-10 space-y-8 backdrop-blur-md sticky top-32 shadow-2xl">
+              <div className="bg-slate-900/80 border border-slate-800/60 rounded-[3rem] p-10 space-y-8 backdrop-blur-md sticky top-32 shadow-2xl">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3 text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em]">
                     {activeTab === "Email" ? (
@@ -1980,88 +2193,144 @@ export default function App() {
 
                 {activeTab === "Email" ? (
                   <div className="space-y-6">
+                    {/* Creation Mode Toggle */}
                     <div className="space-y-3">
-                      <Tooltip text="Select the type of automated funnel sequence.">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                          Sequence Type
-                        </label>
-                      </Tooltip>
-                      <select
-                        value={emailOpts.sequenceType}
-                        onChange={(e) =>
-                          setEmailOpts({
-                            ...emailOpts,
-                            sequenceType: e.target.value,
-                          })
-                        }
-                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
-                      >
-                        {EMAIL_SEQUENCES.map((seq) => (
-                          <option key={seq.name} value={seq.name}>
-                            {seq.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-3">
-                      <Tooltip text="The position of this email within the sequence.">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                          Email Number
-                        </label>
-                      </Tooltip>
-                      <div className="grid grid-cols-4 gap-2">
-                        {Array.from({
-                          length:
-                            EMAIL_SEQUENCES.find(
-                              (s) => s.name === emailOpts.sequenceType,
-                            )?.length || 4,
-                        }).map((_, i) => (
-                          <button
-                            key={i}
-                            onClick={() =>
-                              setEmailOpts({ ...emailOpts, emailNumber: i + 1 })
-                            }
-                            className={`py-3 rounded-xl font-black text-xs transition-all ${emailOpts.emailNumber === i + 1 ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-900 text-slate-500 hover:bg-slate-800"}`}
-                          >
-                            #{i + 1}
-                          </button>
-                        ))}
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Wand2 size={14} /> Creation Mode
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 border border-slate-800 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEmailOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: false,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!emailOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Create from Scratch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEmailOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: true,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${emailOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Optimize Existing
+                        </button>
                       </div>
                     </div>
-                    <div className="p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl space-y-2">
-                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                        <Zap size={12} fill="currentColor" /> Recommendation
-                      </p>
-                      <p className="text-xs font-bold text-slate-300">
-                        Target Structure:{" "}
-                        <span className="text-white underline decoration-indigo-500/50">
-                          {emailOpts.recommendedStructure}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="space-y-3">
-                      <Tooltip text="Change the psychological formula for this specific email.">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                          Structure Override
+
+                    {emailOpts.optimizeExisting && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <BookText size={14} /> Paste Current Email Copy
                         </label>
-                      </Tooltip>
-                      <select
-                        value={emailOpts.structure}
-                        onChange={(e) =>
-                          setEmailOpts({
-                            ...emailOpts,
-                            structure: e.target.value,
-                          })
-                        }
-                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
-                      >
-                        {EMAIL_STRUCTURES.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <textarea
+                          value={emailOpts.existingCopy || ""}
+                          onChange={(e) =>
+                            setEmailOpts((prev) => ({
+                              ...prev,
+                              existingCopy: e.target.value,
+                            }))
+                          }
+                          placeholder="Paste the email copy you want to optimize here..."
+                          className="w-full h-40 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs font-medium outline-none resize-none placeholder:text-slate-700"
+                        />
+                      </div>
+                    )}
+
+                    {!emailOpts.optimizeExisting && (
+                      <>
+                        <div className="space-y-3">
+                          <Tooltip text="Select the type of automated funnel sequence.">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                              Sequence Type
+                            </label>
+                          </Tooltip>
+                          <select
+                            value={emailOpts.sequenceType}
+                            onChange={(e) =>
+                              setEmailOpts({
+                                ...emailOpts,
+                                sequenceType: e.target.value,
+                              })
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
+                          >
+                            {EMAIL_SEQUENCES.map((seq) => (
+                              <option key={seq.name} value={seq.name}>
+                                {seq.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-3">
+                          <Tooltip text="The position of this email within the sequence.">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                              Email Number
+                            </label>
+                          </Tooltip>
+                          <div className="grid grid-cols-4 gap-2">
+                            {Array.from({
+                              length:
+                                EMAIL_SEQUENCES.find(
+                                  (s) => s.name === emailOpts.sequenceType,
+                                )?.length || 4,
+                            }).map((_, i) => (
+                              <button
+                                key={i}
+                                onClick={() =>
+                                  setEmailOpts({ ...emailOpts, emailNumber: i + 1 })
+                                }
+                                className={`py-3 rounded-xl font-black text-xs transition-all ${emailOpts.emailNumber === i + 1 ? "bg-indigo-600 text-white shadow-lg" : "bg-slate-900 text-slate-500 hover:bg-slate-800"}`}
+                              >
+                                #{i + 1}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl space-y-2">
+                          <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <Zap size={12} fill="currentColor" /> Recommendation
+                          </p>
+                          <p className="text-xs font-bold text-slate-300">
+                            Target Structure:{" "}
+                            <span className="text-white underline decoration-indigo-500/50">
+                              {emailOpts.recommendedStructure}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="space-y-3">
+                          <Tooltip text="Change the psychological formula for this specific email.">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                              Structure Override
+                            </label>
+                          </Tooltip>
+                          <select
+                            value={emailOpts.structure}
+                            onChange={(e) =>
+                              setEmailOpts({
+                                ...emailOpts,
+                                structure: e.target.value,
+                              })
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
+                          >
+                            {EMAIL_STRUCTURES.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
                     <div className="space-y-3">
                       <Tooltip text="Add specific context, stories, or technical details for the AI.">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
@@ -2116,7 +2385,61 @@ export default function App() {
                   </div>
                 ) : activeTab === "Landing Page" ? (
                   <div className="space-y-6">
-                    <div className="p-6 bg-slate-950/60 border border-slate-800 rounded-[2rem] space-y-6">
+                    {/* Creation Mode Toggle */}
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Wand2 size={14} /> Creation Mode
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 border border-slate-800 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLpOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: false,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!lpOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Create from Scratch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLpOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: true,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${lpOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Optimize Existing
+                        </button>
+                      </div>
+                    </div>
+
+                    {lpOpts.optimizeExisting && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <BookText size={14} /> Paste Current Landing Page Copy
+                        </label>
+                        <textarea
+                          value={lpOpts.existingCopy || ""}
+                          onChange={(e) =>
+                            setLpOpts((prev) => ({
+                              ...prev,
+                              existingCopy: e.target.value,
+                            }))
+                          }
+                          placeholder="Paste the landing page copy you want to optimize here..."
+                          className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs font-medium outline-none resize-none placeholder:text-slate-700"
+                        />
+                      </div>
+                    )}
+
+                    {!lpOpts.optimizeExisting && (
+                      <>
+                        <div className="p-6 bg-slate-950/60 border border-slate-800 rounded-[2rem] space-y-6">
                       <div className="flex items-center gap-3 text-indigo-400 font-black text-[10px] uppercase tracking-[0.2em]">
                         <ImageIcon size={16} /> Inspiration Asset
                       </div>
@@ -2530,10 +2853,66 @@ export default function App() {
                         )}
                       </div>
                     </div>
+                    </>
+                    )}
                   </div>
                 ) : activeTab === "VSL" ? (
                   <div className="space-y-6">
+                    {/* Creation Mode Toggle */}
                     <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Wand2 size={14} /> Creation Mode
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 border border-slate-800 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVslOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: false,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!vslOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Create from Scratch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVslOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: true,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${vslOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Optimize Existing
+                        </button>
+                      </div>
+                    </div>
+
+                    {vslOpts.optimizeExisting && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <BookText size={14} /> Paste Current VSL Copy
+                        </label>
+                        <textarea
+                          value={vslOpts.existingCopy || ""}
+                          onChange={(e) =>
+                            setVslOpts((prev) => ({
+                              ...prev,
+                              existingCopy: e.target.value,
+                            }))
+                          }
+                          placeholder="Paste the VSL script copy you want to optimize here..."
+                          className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs font-medium outline-none resize-none placeholder:text-slate-700"
+                        />
+                      </div>
+                    )}
+
+                    {!vslOpts.optimizeExisting && (
+                      <>
+                        <div className="space-y-3">
                       <Tooltip text="The page the viewer goes to after the video.">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                           <Flag size={14} /> Target Landing Page
@@ -2693,10 +3072,66 @@ export default function App() {
                         <option>Educational & Direct</option>
                       </select>
                     </div>
+                    </>
+                    )}
                   </div>
                 ) : activeTab === "Ads" ? (
                   <div className="space-y-6">
+                    {/* Creation Mode Toggle */}
                     <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                        <Wand2 size={14} /> Creation Mode
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 border border-slate-800 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: false,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!adOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Create from Scratch
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdOpts((prev) => ({
+                              ...prev,
+                              optimizeExisting: true,
+                            }))
+                          }
+                          className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${adOpts.optimizeExisting ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/10" : "text-slate-400 hover:text-white"}`}
+                        >
+                          Optimize Existing
+                        </button>
+                      </div>
+                    </div>
+
+                    {adOpts.optimizeExisting && (
+                      <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <BookText size={14} /> Paste Current Ad Copy
+                        </label>
+                        <textarea
+                          value={adOpts.existingCopy || ""}
+                          onChange={(e) =>
+                            setAdOpts((prev) => ({
+                              ...prev,
+                              existingCopy: e.target.value,
+                            }))
+                          }
+                          placeholder="Paste the ad copy you want to optimize here..."
+                          className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs font-medium outline-none resize-none placeholder:text-slate-700"
+                        />
+                      </div>
+                    )}
+
+                    {!adOpts.optimizeExisting && (
+                      <>
+                        <div className="space-y-3">
                       <Tooltip text="The primary objective for this ad campaign.">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                           <Target size={14} /> Ad Goal
@@ -2776,6 +3211,8 @@ export default function App() {
                         </p>
                       </div>
                     )}
+                  </>
+                )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -2821,33 +3258,37 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <Tooltip text="The psychological sequence for high-CTR ads.">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                          <Layers size={14} /> Ad Framework
-                        </label>
-                      </Tooltip>
-                      <select
-                        value={adOpts.framework}
-                        onChange={(e) =>
-                          setAdOpts({ ...adOpts, framework: e.target.value })
-                        }
-                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
-                      >
-                        {AD_FRAMEWORKS.map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {!adOpts.optimizeExisting && (
+                      <>
+                        <div className="space-y-3">
+                          <Tooltip text="The psychological sequence for high-CTR ads.">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                              <Layers size={14} /> Ad Framework
+                            </label>
+                          </Tooltip>
+                          <select
+                            value={adOpts.framework}
+                            onChange={(e) =>
+                              setAdOpts({ ...adOpts, framework: e.target.value })
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm font-bold outline-none"
+                          >
+                            {AD_FRAMEWORKS.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <InsideStructureViewer
-                      frameworkId={adOpts.framework}
-                      frameworks={AD_FRAMEWORKS}
-                      icon={ArrowDownWideNarrow}
-                      title="Ad Psychology Flow"
-                    />
+                        <InsideStructureViewer
+                          frameworkId={adOpts.framework}
+                          frameworks={AD_FRAMEWORKS}
+                          icon={ArrowDownWideNarrow}
+                          title="Ad Psychology Flow"
+                        />
+                      </>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -2907,7 +3348,7 @@ export default function App() {
                   icon={Zap}
                   variant="primary"
                   disabled={!activeContext}
-                  className="w-full py-6 rounded-2xl font-black text-xs uppercase tracking-[0.3em]"
+                  className="w-full py-6 rounded-2xl font-black text-xs uppercase tracking-[0.3em] bg-factory-gradient"
                 />
               </div>
             </div>
@@ -2930,7 +3371,7 @@ export default function App() {
                       return (
                         <div
                           key={asset.id}
-                          className="bg-[#0f172a]/40 border border-slate-800/60 rounded-[3.5rem] overflow-hidden group shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500"
+                          className="bg-slate-900/40 border border-slate-800/60 rounded-[3.5rem] overflow-hidden group shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500"
                         >
                           <div className="px-12 py-8 border-b border-slate-800/60 bg-slate-900/50 flex items-center justify-between">
                             <div className="flex items-center gap-6">
@@ -3051,7 +3492,7 @@ export default function App() {
 
       {isSettingsOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
-          <div className="bg-[#0f172a] w-full max-w-xl rounded-[4rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+          <div className="bg-slate-900 w-full max-w-xl rounded-[4rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
             <div className="p-16 space-y-10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-5">
@@ -3069,42 +3510,132 @@ export default function App() {
                   <X size={24} />
                 </button>
               </div>
-              <div className="space-y-8">
+              
+              <div className="space-y-8 max-h-[55vh] overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-slate-800">
+                {/* Intelligence Matrix */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-2">
                     Intelligence Matrix
                   </label>
                   <div className="grid grid-cols-2 gap-4">
                     <button
-                      onClick={() =>
-                        setGlobalSettings({
+                      onClick={() => {
+                        const newSettings = {
                           ...globalSettings,
-                          model: "gemini-3-flash-preview",
-                        })
-                      }
-                      className={`p-6 rounded-[1.5rem] border transition-all flex flex-col items-center ${globalSettings.model === "gemini-3-flash-preview" ? "bg-indigo-600 border-indigo-500" : "bg-slate-950 border-slate-800"}`}
+                          model: "gemini-3.5-flash" as const,
+                          generationMode: "fast" as const,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`p-6 rounded-[1.5rem] border transition-all flex flex-col items-center ${globalSettings.generationMode === "fast" ? "bg-indigo-600 border-indigo-500" : "bg-slate-950 border-slate-800"}`}
                     >
                       <Zap size={24} />
-                      <p className="text-xs font-black uppercase">
+                      <p className="text-xs font-black uppercase mt-2">
                         Fast Matrix
                       </p>
                     </button>
                     <button
-                      onClick={() =>
-                        setGlobalSettings({
+                      onClick={() => {
+                        const newSettings = {
                           ...globalSettings,
-                          model: "gemini-3-pro-preview",
-                        })
-                      }
-                      className={`p-6 rounded-[1.5rem] border transition-all flex flex-col items-center ${globalSettings.model === "gemini-3-pro-preview" ? "bg-purple-600 border-purple-500" : "bg-slate-950 border-slate-800"}`}
+                          model: "gemini-3.1-pro-preview" as const,
+                          generationMode: "genius" as const,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`p-6 rounded-[1.5rem] border transition-all flex flex-col items-center ${globalSettings.generationMode === "genius" ? "bg-purple-600 border-purple-500" : "bg-slate-950 border-slate-800"}`}
                     >
                       <Brain size={24} />
-                      <p className="text-xs font-black uppercase">
+                      <p className="text-xs font-black uppercase mt-2">
                         Genius Matrix
                       </p>
                     </button>
                   </div>
                 </div>
+
+                {/* Creativity Engine Slider */}
+                <div className="space-y-4 pt-6 border-t border-slate-800/60">
+                  <div className="flex justify-between items-center">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black uppercase tracking-widest text-white">
+                        Creativity Engine
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium italic mt-1 leading-relaxed">
+                        Adjusts response temperature (Strict vs Creative)
+                      </span>
+                    </div>
+                    <span className="text-xs font-black text-indigo-400 uppercase bg-indigo-600/10 px-3 py-1.5 rounded-lg border border-indigo-500/20">
+                      {globalSettings.creativityEngine <= 0.3
+                        ? "Strict & Direct"
+                        : globalSettings.creativityEngine >= 0.8
+                          ? "Highly Creative"
+                          : "Balanced Dynamic"}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.1"
+                    value={globalSettings.creativityEngine}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      const newSettings = {
+                        ...globalSettings,
+                        creativityEngine: val,
+                      };
+                      setGlobalSettings(newSettings);
+                      saveSettingsToStore(newSettings);
+                    }}
+                    className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                    <span>Strict & Direct (0.1)</span>
+                    <span>Highly Creative (1.0)</span>
+                  </div>
+                </div>
+
+                {/* Default Output Language */}
+                <div className="space-y-4 pt-6 border-t border-slate-800/60">
+                  <div className="flex flex-col mb-1">
+                    <span className="text-xs font-black uppercase tracking-widest text-white">
+                      Default Output Language
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium italic mt-1 leading-relaxed">
+                      All newly generated assets will be written in this language.
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={globalSettings.defaultLanguage}
+                      onChange={(e) => {
+                        const newSettings = {
+                          ...globalSettings,
+                          defaultLanguage: e.target.value,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl px-6 py-4 text-xs font-black tracking-widest uppercase outline-none focus:border-indigo-500/50 appearance-none"
+                    >
+                      <option value="English">English</option>
+                      <option value="Spanish">Spanish (Español)</option>
+                      <option value="French">French (Français)</option>
+                      <option value="German">German (Deutsch)</option>
+                      <option value="Italian">Italian (Italiano)</option>
+                      <option value="Portuguese">Portuguese (Português)</option>
+                      <option value="Japanese">Japanese (日本語)</option>
+                      <option value="Chinese">Chinese (中文)</option>
+                    </select>
+                    <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none text-slate-400">
+                      <ChevronRight size={16} className="transform rotate-90" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Performance Optimizer */}
                 <div className="space-y-6 pt-6 border-t border-slate-800/60">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -3123,12 +3654,14 @@ export default function App() {
                       </div>
                     </div>
                     <button
-                      onClick={() =>
-                        setGlobalSettings({
+                      onClick={() => {
+                        const newSettings = {
                           ...globalSettings,
                           performanceMode: !globalSettings.performanceMode,
-                        })
-                      }
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
                       className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${globalSettings.performanceMode ? "bg-indigo-600" : "bg-slate-800"}`}
                     >
                       <div
@@ -3137,7 +3670,120 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Auto-Save Assets */}
+                <div className="space-y-6 pt-6 border-t border-slate-800/60">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`p-2.5 rounded-xl transition-all ${globalSettings.autoSaveAssets ? "bg-indigo-600/10 text-indigo-400" : "bg-slate-800 text-slate-600"}`}
+                      >
+                        <Save size={18} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black uppercase tracking-widest text-white">
+                          Auto-Save Assets
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-medium italic mt-1 leading-relaxed">
+                          Automatically saves generated copy directly to "My Files".
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newSettings = {
+                          ...globalSettings,
+                          autoSaveAssets: !globalSettings.autoSaveAssets,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`w-12 h-6 rounded-full p-1 transition-all flex items-center ${globalSettings.autoSaveAssets ? "bg-indigo-600" : "bg-slate-800"}`}
+                    >
+                      <div
+                        className={`w-4 h-4 bg-white rounded-full transition-all transform ${globalSettings.autoSaveAssets ? "translate-x-6" : "translate-x-0"}`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Visual Theme Switcher */}
+                <div className="space-y-4 pt-6 border-t border-slate-800/60 pb-2">
+                  <div className="flex flex-col mb-1">
+                    <span className="text-xs font-black uppercase tracking-widest text-white">
+                      Visual Interface Theme
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium italic mt-1 leading-relaxed">
+                      Transform the accent branding and interface highlights of the matrix.
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newSettings = {
+                          ...globalSettings,
+                          theme: "cyber" as const,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 ${(globalSettings.theme || "cyber") === "cyber" ? "bg-slate-900 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-950/20" : "bg-slate-950/60 border-slate-800/60 text-slate-400 hover:border-slate-800"}`}
+                    >
+                      <div className="flex gap-1.5">
+                        <span className="w-3.5 h-3.5 rounded-full bg-indigo-600 border border-indigo-400/30" />
+                        <span className="w-3.5 h-3.5 rounded-full bg-purple-600 border border-purple-400/30" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider">
+                        Cyber
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newSettings = {
+                          ...globalSettings,
+                          theme: "neon" as const,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 ${globalSettings.theme === "neon" ? "bg-slate-900 border-green-500 text-green-400 shadow-lg shadow-green-950/20" : "bg-slate-950/60 border-slate-800/60 text-slate-400 hover:border-slate-800"}`}
+                    >
+                      <div className="flex gap-1.5">
+                        <span className="w-3.5 h-3.5 rounded-full bg-green-500 border border-green-400/30" />
+                        <span className="w-3.5 h-3.5 rounded-full bg-teal-500 border border-teal-400/30" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider">
+                        Neon
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newSettings = {
+                          ...globalSettings,
+                          theme: "solar" as const,
+                        };
+                        setGlobalSettings(newSettings);
+                        saveSettingsToStore(newSettings);
+                      }}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-2 ${globalSettings.theme === "solar" ? "bg-slate-900 border-orange-500 text-orange-400 shadow-lg shadow-orange-950/20" : "bg-slate-950/60 border-slate-800/60 text-slate-400 hover:border-slate-800"}`}
+                    >
+                      <div className="flex gap-1.5">
+                        <span className="w-3.5 h-3.5 rounded-full bg-orange-500 border border-orange-400/30" />
+                        <span className="w-3.5 h-3.5 rounded-full bg-red-500 border border-red-400/30" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider">
+                        Solar
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
+
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="w-full py-6 bg-slate-800 hover:bg-slate-700 text-white rounded-[1.8rem] font-black text-xs uppercase tracking-[0.3em] transition-all"
@@ -3151,7 +3797,7 @@ export default function App() {
 
       {showRefinementModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
-          <div className="bg-[#0f172a] w-full max-w-2xl rounded-[4rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+          <div className="bg-slate-900 w-full max-w-2xl rounded-[4rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
             <div className="p-16 space-y-10">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-5">

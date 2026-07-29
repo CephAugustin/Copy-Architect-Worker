@@ -95,6 +95,38 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["promptId", "userId", "title", "category", "content", "createdAt", "updatedAt"]
+    },
+    "ClientProfile": {
+      "title": "Client Profile",
+      "description": "Client branding and demographic profile",
+      "type": "object",
+      "properties": {
+        "profileId": { "type": "string" },
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "targetAudience": { "type": "string" },
+        "mainOffer": { "type": "string" },
+        "brandVoiceSummary": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["profileId", "userId", "clientName", "targetAudience", "mainOffer", "brandVoiceSummary", "createdAt", "updatedAt"]
+    },
+    "UserSettings": {
+      "title": "User Settings",
+      "description": "User specific global settings and preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "assetBatching": { "type": "number" },
+        "generationMode": { "type": "string", "enum": ["fast", "genius"] },
+        "useGoogleSearch": { "type": "boolean" },
+        "performanceMode": { "type": "boolean" },
+        "creativityEngine": { "type": "number" },
+        "autoSaveAssets": { "type": "boolean" },
+        "defaultLanguage": { "type": "string" }
+      },
+      "required": ["userId"]
     }
   },
   "firestore": {
@@ -125,6 +157,14 @@
     "users/{userId}/savedPrompts/{promptId}": {
       "schema": "SavedPrompt",
       "description": "User specific saved prompts"
+    },
+    "users/{userId}/clientProfiles/{profileId}": {
+      "schema": "ClientProfile",
+      "description": "User specific client profiles"
+    },
+    "users/{userId}/settings/{settingId}": {
+      "schema": "UserSettings",
+      "description": "User specific global settings document"
     }
   }
 }

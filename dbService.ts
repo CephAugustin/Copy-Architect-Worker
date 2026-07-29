@@ -1,6 +1,6 @@
 import { auth, db } from './firebase';
 import { collection, doc, setDoc, getDocs, query, where, deleteDoc, updateDoc, getDocFromServer, orderBy } from 'firebase/firestore';
-import { UserProfile, KnowledgeEntry, Folder, FileEntry, Note, TeamMember, SavedPrompt } from './types';
+import { UserProfile, KnowledgeEntry, Folder, FileEntry, Note, TeamMember, SavedPrompt, ClientProfile } from './types';
 
 enum OperationType {
   CREATE = 'create',
@@ -313,3 +313,68 @@ export const updateSavedPrompt = async (userId: string, promptId: string, update
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}/savedPrompts/${promptId}`);
   }
 };
+
+// Client Profiles
+export const saveClientProfile = async (profile: ClientProfile) => {
+  const path = `users/${profile.userId}/clientProfiles/${profile.profileId}`;
+  try {
+    await setDoc(doc(db, 'users', profile.userId, 'clientProfiles', profile.profileId), profile);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+};
+
+export const fetchClientProfiles = async (userId: string): Promise<ClientProfile[]> => {
+  try {
+    const q = query(collection(db, 'users', userId, 'clientProfiles'), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    const profiles: ClientProfile[] = [];
+    querySnapshot.forEach((doc) => {
+      profiles.push(doc.data() as ClientProfile);
+    });
+    return profiles;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, `users/${userId}/clientProfiles`);
+    return [];
+  }
+};
+
+export const deleteClientProfile = async (userId: string, profileId: string) => {
+  try {
+    await deleteDoc(doc(db, 'users', userId, 'clientProfiles', profileId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${userId}/clientProfiles/${profileId}`);
+  }
+};
+
+export const updateClientProfile = async (userId: string, profileId: string, updates: Partial<ClientProfile>) => {
+  try {
+    await updateDoc(doc(db, 'users', userId, 'clientProfiles', profileId), { ...updates, updatedAt: Date.now() });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}/clientProfiles/${profileId}`);
+  }
+};
+
+// User Settings Persistence
+export const saveUserSettings = async (userId: string, settings: any) => {
+  const path = `users/${userId}/settings/global`;
+  try {
+    await setDoc(doc(db, 'users', userId, 'settings', 'global'), settings);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+};
+
+export const fetchUserSettings = async (userId: string): Promise<any | null> => {
+  try {
+    const docSnap = await getDocFromServer(doc(db, 'users', userId, 'settings', 'global'));
+    if (docSnap.exists()) {
+      return docSnap.data();
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `users/${userId}/settings/global`);
+    return null;
+  }
+};
+
