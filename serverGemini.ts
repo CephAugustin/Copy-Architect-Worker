@@ -62,14 +62,91 @@ FRAMEWORK: Elite High-Ticket (Conversion-Engineered)
 
 const API_KEY = process.env.GEMINI_API_KEY || "";
 
-function getModelName(global: GlobalSettings): string {
-  if (global && global.generationMode === 'genius') {
-    return 'gemini-3.1-pro-preview';
+let cachedActiveModel: string | null = null;
+
+function stripModelsPrefix(name: string): string {
+  return name.startsWith("models/") ? name.substring(7) : name;
+}
+
+export async function getActiveModel(): Promise<string> {
+  if (cachedActiveModel) {
+    return cachedActiveModel;
   }
-  if (global && global.generationMode === 'fast') {
-    return 'gemini-3.5-flash';
+
+  const primaryFallback = "gemini-3.5-flash";
+  const secondaryFallback = "gemini-3.5-flash-lite";
+  const apiKey = process.env.GEMINI_API_KEY || API_KEY;
+  if (!apiKey) {
+    console.warn("[getActiveModel] No API key found, returning fallback:", primaryFallback);
+    return primaryFallback;
   }
-  return (global && global.model) || 'gemini-3.5-flash';
+
+  try {
+    // 1. Fetch the list of available models
+    console.log("[getActiveModel] Fetching list of available models...");
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch models: ${response.statusText}`);
+    }
+    const data = await response.json();
+    const availableModels: string[] = (data.models || []).map((m: any) => m.name);
+    console.log(`[getActiveModel] Found ${availableModels.length} available models.`);
+
+    // 2. Identify the equipped model
+    const equippedRaw = process.env.EQUIPPED_MODEL || process.env.GEMINI_MODEL || process.env.MODEL_NAME || "";
+    if (!equippedRaw) {
+      console.log("[getActiveModel] No equipped model env var found. Using fallback:", primaryFallback);
+      cachedActiveModel = primaryFallback;
+      return primaryFallback;
+    }
+
+    const availableModelsClean = availableModels.map(m => stripModelsPrefix(m));
+    const equippedModelClean = stripModelsPrefix(equippedRaw);
+    
+    // Check if the equipped model is in the fetched available models list
+    if (!availableModelsClean.includes(equippedModelClean)) {
+      console.warn(`[getActiveModel] Equipped model '${equippedModelClean}' not found in available models list. Falling back to '${primaryFallback}'`);
+      cachedActiveModel = primaryFallback;
+      return primaryFallback;
+    }
+
+    const equippedModel = `models/${equippedModelClean}`;
+
+    // 3. Check quota availability for the equipped model
+    console.log(`[getActiveModel] Verifying quota availability for '${equippedModel}'...`);
+    const ai = new GoogleGenAI({ apiKey });
+    try {
+      // Send a minimal request to verify quota
+      await ai.models.generateContent({
+        model: equippedModel,
+        contents: "Hello",
+        config: { maxOutputTokens: 1 }
+      });
+      console.log(`[getActiveModel] Quota verification succeeded for '${equippedModel}'.`);
+      cachedActiveModel = equippedModelClean;
+      return equippedModelClean;
+    } catch (quotaError: any) {
+      const errorMsg = quotaError?.message || "";
+      const isQuotaExceeded = errorMsg.includes("RESOURCE_EXHAUSTED") || 
+                             errorMsg.includes("429") ||
+                             errorMsg.toLowerCase().includes("quota");
+      
+      if (isQuotaExceeded) {
+        console.warn(`[getActiveModel] Equipped model '${equippedModel}' has 0 or exhausted quota. Skipping it and using fallback '${primaryFallback}'.`);
+        cachedActiveModel = primaryFallback;
+        return primaryFallback;
+      } else {
+        // If it's some other non-quota error (like bad parameters), the model is technically available and has quota
+        console.log(`[getActiveModel] Model '${equippedModel}' returned non-quota error: ${errorMsg}. Assuming it has quota and is active.`);
+        cachedActiveModel = equippedModelClean;
+        return equippedModelClean;
+      }
+    }
+  } catch (error) {
+    console.error("[getActiveModel] Error during active model selection, falling back to default:", error);
+    cachedActiveModel = primaryFallback;
+    return primaryFallback;
+  }
 }
 
 async function safeGenerateContent(
@@ -80,75 +157,59 @@ async function safeGenerateContent(
     config?: any;
   }
 ): Promise<any> {
-  const requestedModel = options.model;
-  const fallbacks: string[] = [requestedModel];
+  const model = options.model;
+  console.log(`[Gemini Request] Attempting generation with model: ${model}`);
   
-  const candidateModels = [
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-3.1-flash-lite'
-  ];
+  try {
+    const response = await ai.models.generateContent({
+      ...options,
+      model: model
+    });
+    console.log(`[Gemini Success] Successfully generated content with model: ${model}`);
+    return response;
+  } catch (error: any) {
+    const errorMsg = error?.message || "";
+    const isUnavailable = errorMsg.includes("503") || 
+                          errorMsg.includes("UNAVAILABLE") || 
+                          errorMsg.toLowerCase().includes("high demand") ||
+                          errorMsg.toLowerCase().includes("unavailable");
 
-  for (const m of candidateModels) {
-    if (requestedModel !== m) {
-      fallbacks.push(m);
-    }
-  }
-
-  // Deduplicate fallbacks
-  const uniqueModels = fallbacks.filter((item, index) => fallbacks.indexOf(item) === index);
-
-  let lastError: any = null;
-
-  for (const model of uniqueModels) {
-    console.log(`[Gemini Request] Attempting generation with model: ${model}`);
+    console.error(`[Gemini Attempt Failed] model: ${model}. Error:`, errorMsg);
     
-    // Attempt with retries for transient errors (e.g. 503)
-    const maxRetries = 1;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // If the API returns a 503 “high demand / unavailable” error, switch to flash-lite
+    if (isUnavailable && model !== "gemini-3.5-flash-lite") {
+      console.log("[Gemini Fallback] Flash unavailable. Switching to flash-lite");
       try {
+        const secondaryFallback = "gemini-3.5-flash-lite";
+        console.log(`[Gemini Request] Attempting generation with secondary fallback model: ${secondaryFallback}`);
         const response = await ai.models.generateContent({
           ...options,
-          model: model
+          model: secondaryFallback
         });
-        console.log(`[Gemini Success] Successfully generated content with model: ${model}`);
+        console.log(`[Gemini Success] Successfully generated content with secondary fallback model: ${secondaryFallback}`);
         return response;
-      } catch (error: any) {
-        lastError = error;
-        const errorMsg = error?.message || "";
-        const isQuotaExceeded = errorMsg.includes("RESOURCE_EXHAUSTED") || 
-                               errorMsg.includes("429") ||
-                               errorMsg.toLowerCase().includes("quota");
-        const isUnavailable = errorMsg.includes("503") || 
-                              errorMsg.includes("UNAVAILABLE");
-
-        console.error(`[Gemini Attempt ${attempt + 1}/${maxRetries + 1} Failed] model: ${model}. Error:`, errorMsg);
-        
-        if (isQuotaExceeded) {
-          console.warn(`[Gemini Quota Exceeded] Quota exceeded for model ${model}. Skipping retries, advancing to next fallback model immediately.`);
-          break; // Don't retry the same model for quota errors; move to the next model immediately
-        } else if (isUnavailable && attempt < maxRetries) {
-          const delayMs = (attempt + 1) * 1000;
-          console.warn(`[Gemini Retry] Service unavailable. Waiting ${delayMs}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          // If not a retryable error or ran out of retries, proceed to the next fallback model
-          break;
-        }
+      } catch (fallbackError: any) {
+        const fallbackErrorMsg = fallbackError?.message || "";
+        console.error(`[Gemini Fallback Failed] model: gemini-3.5-flash-lite. Error:`, fallbackErrorMsg);
+        // If flash-lite also fails, return a clean JSON error instead of throwing an unhandled rejection
+        return {
+          text: JSON.stringify({ error: "Gemini models currently unavailable", details: fallbackErrorMsg })
+        };
       }
+    } else {
+      // Return a clean JSON error instead of throwing an unhandled rejection
+      return {
+        text: JSON.stringify({ error: "Gemini model generation failed", details: errorMsg })
+      };
     }
   }
-
-  // If all fallback models failed, throw the last error
-  console.error(`[Gemini API Fatal] All fallback models failed.`);
-  throw lastError || new Error("Failed to generate content with any model");
 }
 
 export async function buildFullStrategicBrief(inputs: BriefInputs, global: GlobalSettings): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Generate a comprehensive strategic brief based on these inputs: ${JSON.stringify(inputs)}.
     
     You MUST follow this EXACT format and include all headers and sub-bullets:
@@ -237,8 +298,9 @@ export async function analyzeReferenceAsset(
     ];
   }
 
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: 'gemini-3.5-flash',
+    model: model,
     contents: { parts },
     config: {
       tools: type === 'url' ? [{ googleSearch: {} }] : undefined,
@@ -250,8 +312,9 @@ export async function analyzeReferenceAsset(
 
 export async function recommendLPSettings(brief: string, global: GlobalSettings): Promise<{ structureType: string; reason: string }> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Based on this brief, recommend the best Landing Page Framework: ${brief}`,
     config: {
       responseMimeType: "application/json",
@@ -274,8 +337,9 @@ export async function recommendLPSettings(brief: string, global: GlobalSettings)
 
 export async function recommendAdSettings(brief: string, global: GlobalSettings): Promise<{ framework: string; hookType: string; platform: string; reason: string }> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Recommend the best Ad Framework, Hook, and Platform for this brief: ${brief}`,
     config: {
       responseMimeType: "application/json",
@@ -300,8 +364,9 @@ export async function recommendAdSettings(brief: string, global: GlobalSettings)
 
 export async function recommendVSLSettings(brief: string, global: GlobalSettings): Promise<{ framework: string; hookType: string; reason: string }> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Recommend a VSL Framework and Hook for this brief: ${brief}`,
     config: {
       responseMimeType: "application/json",
@@ -516,8 +581,9 @@ ${optAny.existingCopy || ""}
     finalSystemInstruction += `\n\nCRITICAL LANGUAGE REQUIREMENT: You MUST generate all copy, headlines, CTAs, and structural body texts in the following language: ${global.defaultLanguage}. Do not write or translate back to English. Output directly in ${global.defaultLanguage}.`;
   }
 
+  const model = await getActiveModel();
   const response: GenerateContentResponse = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `${isRefinement ? "REFINEMENT: " + refinementFeedback : "GENERATE NEW COPY."} BRIEF: ${brief} ${assetSpecificPrompt}`,
     config: {
       systemInstruction: finalSystemInstruction,
@@ -531,8 +597,9 @@ ${optAny.existingCopy || ""}
 
 export async function autoFillContext(rawText: string, global: GlobalSettings): Promise<Partial<BriefInputs>> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Extract businessName, industry, targetAudience, productDescription, primaryUSP, painPoints from: "${rawText}"`,
     config: { 
       responseMimeType: "application/json",
@@ -557,8 +624,9 @@ export async function analyzeBrandVoice(
   global: GlobalSettings
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Analyze this copy. Extract the brand voice, tone, vocabulary, and sentence structure. Format as a short Brand Voice Guide.\n\nCOPY:\n${successfulCopy}`,
     config: {
       systemInstruction: "You are an Elite Copywriting Strategist and Brand Voice Expert.",
@@ -579,8 +647,9 @@ export async function auditMarketingCopy(
     systemInstruction += `\n\nCRITICAL LANGUAGE REQUIREMENT: You MUST write your entire audit report (including the Critique, the Rewrite, and the Breakdown sections) in the ${global.defaultLanguage} language.`;
   }
 
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: `Please audit this piece of marketing copy:\n\n${copy}`,
     config: {
       systemInstruction,
@@ -630,8 +699,9 @@ ${dynamicInstruction}
 
 Write the post content directly. Do not include meta-commentary like "Here is your post:". Apply direct-response copywriting principles to optimize engagement, clicks, or conversions.`;
 
+  const model = await getActiveModel();
   const response = await safeGenerateContent(ai, {
-    model: getModelName(global),
+    model: model,
     contents: prompt,
     config: {
       systemInstruction: `You are an elite direct-response copywriter and social media strategist.${global && global.defaultLanguage ? ` You MUST write the final social media post content entirely in the ${global.defaultLanguage} language.` : ""}`,
